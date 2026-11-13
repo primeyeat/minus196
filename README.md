@@ -12,8 +12,8 @@ a trademark of CodeWeavers.
 
 ## Getting it
 
-1. Download `minus196-app.zip` from the [latest release](https://github.com/primeyeat/minus196/releases)
-   and unpack it. Move `-196` to your Applications folder.
+1. Download `minus196.dmg` from the [latest release](https://github.com/primeyeat/minus196/releases),
+   open it, and drag `-196` onto the Applications folder next to it.
 2. Open it. The app is not signed with an Apple developer certificate, so macOS warns the
    first time: open System Settings, go to Privacy & Security, and choose "Open Anyway".
 3. Click "Download and Set Up". The app fetches its Windows engine (about 190 MB, about 1 GB

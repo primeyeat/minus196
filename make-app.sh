@@ -1,5 +1,6 @@
 #!/bin/bash
 # Builds the SwiftUI app and wraps it as build/-196.app (ad-hoc signed: other Macs warn before opening it).
+# Also makes build/minus196.dmg, the disk image attached to releases.
 # Usage: ./make-app.sh
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -29,6 +30,12 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 codesign --force -s - "$APP"
 echo "built $APP"
-# A zip of the app, for attaching to a release.
-ditto -c -k --keepParent "$APP" "$HERE/build/minus196-app.zip"
-echo "zipped $HERE/build/minus196-app.zip"
+# A disk image for a release: the app beside a shortcut to the Applications folder.
+DMG="$HERE/build/minus196.dmg"
+STAGE="$(mktemp -d)"
+cp -R "$APP" "$STAGE/"
+ln -s /Applications "$STAGE/Applications"
+rm -f "$DMG" "$HERE/build/minus196-app.zip"
+hdiutil create -quiet -volname "-196" -srcfolder "$STAGE" -fs HFS+ -format UDZO -imagekey zlib-level=9 "$DMG"
+rm -rf "$STAGE"
+echo "disk image: $DMG"
