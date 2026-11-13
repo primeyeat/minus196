@@ -10,6 +10,20 @@ tried on one Mac (see below), so reports from other machines are welcome.
 Not affiliated with or endorsed by CodeWeavers, Apple, Valve or the Wine project. CrossOver is
 a trademark of CodeWeavers.
 
+## Getting it
+
+1. Download `minus196-app.zip` from the [latest release](https://github.com/primeyeat/minus196/releases)
+   and unpack it. Move `-196` to your Applications folder.
+2. Open it. The app is not signed with an Apple developer certificate, so macOS warns the
+   first time: open System Settings, go to Privacy & Security, and choose "Open Anyway".
+3. Click "Download and Set Up". The app fetches its Windows engine (about 190 MB, about 1 GB
+   unpacked) from this repository's releases, checks it against a built-in checksum, and
+   unpacks it. This happens once.
+4. Optional, for DirectX 12 games and DLSS: choose File > Add Apple's Graphics and follow the
+   three steps. Apple's part has to be downloaded by you, with your own Apple Account.
+
+Needs an Apple silicon Mac with macOS 14 or later, and Rosetta (macOS offers to install it).
+
 ## What it does
 
 - Creates, duplicates and deletes bottles, each with its own Windows version and settings.
@@ -42,19 +56,22 @@ engine, two small patches to Wine, and a small start-up hook.
 Not in it, and you have to get them yourself:
 
 - **Wine.** The engine is built from the source CodeWeavers publishes under the LGPL
-  (`crossover-sources-26.3.0.tar.gz` from their source page). No built Wine is included here.
+  (`crossover-sources-26.3.0.tar.gz` from their source page). The source tree here holds no
+  built Wine; a built engine is attached to the releases, and the app downloads that. Its
+  source is the CodeWeavers archive plus `engine/patches/`, built by the scripts in `engine/`;
+  the licence texts are inside the archive under `LICENSES/`.
 - **Apple's D3DMetal.** It comes from Apple's Game Porting Toolkit, which you download with your
   own Apple account under Apple's licence. `engine/install-gptk.sh` installs it from the disk
   image you downloaded. Without it you still have DXMT, DXVK and Wine's own graphics.
 - **DXMT, DXVK, MoltenVK, Wine Mono.** Built or downloaded from their own projects by the
-  scripts in `engine/`.
+  scripts in `engine/`; built copies are in the same release archive.
 
 The project must not be pointed at the Wine inside an installed CrossOver.app; build the
 engine from source instead.
 
-## Building
+## Building it yourself
 
-Needs Xcode, Rosetta, and Homebrew with `bison`, `pkg-config`, `mingw-w64`, `meson` and `ninja`.
+You only need this if you want to change -196 or build the engine yourself. Needs Xcode, Rosetta, and Homebrew with `bison`, `pkg-config`, `mingw-w64`, `meson` and `ninja`.
 
 The app and the tool:
 
@@ -84,9 +101,15 @@ Then tell -196 where the engine is:
     .build/debug/minus196 engine add engine/dist/cx-26.3
     .build/debug/minus196 doctor
 
+`engine/package-engine.sh` packs the built engine, DXMT and DXVK into the archive the app
+downloads. It makes the copy run from any folder and blanks the build folder's path out of
+the built files.
+
 ## Command line
 
     minus196 doctor
+    minus196 setup [--archive FILE]              download and install the engine
+    minus196 graphics add <toolkit.dmg>          install Apple's D3DMetal from your download
     minus196 engine list | add <path> [--name NAME] | default <name>
     minus196 bottle list | info <name> | delete <name> | duplicate <name> <new-name>
     minus196 bottle create <name> [--arch win64|win32] [--winver win10] [--backend auto|d3dmetal|dxmt|dxvk|wined3d]
@@ -112,8 +135,11 @@ Everything lives in `~/Library/Application Support/minus196` (set `MINUS196_HOME
   Only run programs you trust.
 - A `bottle.json` or `rules.json` from someone else can change how programs are started.
   Treat them like programs: don't use ones you don't trust.
-- The app's "Install Steam" button downloads Valve's installer from Valve's server and runs
-  it. Nothing else in the app or the tool uses the network; there is no telemetry.
+- The app uses the network for two things: the first-start engine download from this
+  repository's releases (over HTTPS, checked against a SHA-256 checksum built into the app),
+  and the "Install Steam" button, which downloads Valve's installer from Valve's server and
+  runs it. There is no telemetry.
+- Apple's graphics files are only installed if they carry Apple's own code signature.
 - The build scripts download source code. LLVM and Wine Mono are checked against recorded
   checksums; DXMT is fetched by its release tag, and the nettle, Vulkan-Headers and cereal
   archives are ones you fetch yourself and are not checked.

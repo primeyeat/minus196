@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds the SwiftUI app and wraps it as build/-196.app (ad-hoc signed, for this Mac only).
+# Builds the SwiftUI app and wraps it as build/-196.app (ad-hoc signed: other Macs warn before opening it).
 # Usage: ./make-app.sh
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -29,3 +29,6 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 codesign --force -s - "$APP"
 echo "built $APP"
+# A zip of the app, for attaching to a release.
+ditto -c -k --keepParent "$APP" "$HERE/build/minus196-app.zip"
+echo "zipped $HERE/build/minus196-app.zip"

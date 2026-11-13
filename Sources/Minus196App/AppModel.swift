@@ -1,6 +1,7 @@
 import AppKit
 import Minus196Core
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// What the window shows. All Wine work goes through Minus196Core on a background queue; this
 /// object only holds the results and is touched on the main thread.
@@ -17,6 +18,11 @@ final class AppModel: ObservableObject {
     @Published var activity: [String: String] = [:]
     @Published var errorMessage: String?
     @Published var hasEngine = true
+    /// First-time setup (downloading the engine): nil when idle.
+    @Published var setupStep: SetupStep?
+    @Published var setupProblem: String?
+    @Published var hasAppleGraphics = false
+    @Published var addingAppleGraphics = false
     /// Tiles showing "Starting…" (bottle name + "/" + tile id).
     @Published var launching: Set<String> = []
 
@@ -36,6 +42,7 @@ final class AppModel: ObservableObject {
     func reload() {
         bottles = (try? BottleStore(paths: paths).list()) ?? []
         hasEngine = !EngineStore(paths: paths).list().isEmpty
+        hasAppleGraphics = AppleGraphicsInstaller(paths: paths).isInstalled
         if selected == nil { selection = bottles.first?.name }
         refreshRunning()
         for bottle in bottles { rescan(bottle) }
@@ -67,6 +74,50 @@ final class AppModel: ObservableObject {
                 if let failure { self.errorMessage = failure }
                 self.reload()
                 then?()
+            }
+        }
+    }
+
+    // MARK: setup
+
+    /// Downloads the engine and installs it. Shown on first start, when nothing can run yet.
+    func setUp() {
+        guard setupStep == nil else { return }
+        setupProblem = nil
+        setupStep = .downloading(fraction: 0)
+        let paths = self.paths
+        work.async {
+            var failure: String?
+            do {
+                try EngineInstaller(paths: paths).setUp { step in DispatchQueue.main.async { self.setupStep = step } }
+            } catch let e as SetupError { failure = e.description } catch { failure = error.localizedDescription }
+            DispatchQueue.main.async {
+                self.setupStep = nil
+                self.setupProblem = failure
+                self.reload()
+            }
+        }
+    }
+
+    /// Lets the user pick the Game Porting Toolkit file they downloaded from Apple and installs
+    /// Apple's graphics part from it.
+    func addAppleGraphics() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose the Game Porting Toolkit file you downloaded from Apple"
+        panel.prompt = "Add"
+        panel.allowedContentTypes = [.diskImage]
+        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        guard panel.runModal() == .OK, let image = panel.url else { return }
+        addingAppleGraphics = true
+        let paths = self.paths
+        work.async {
+            var failure: String?
+            do { try AppleGraphicsInstaller(paths: paths).install(from: image) }
+            catch let e as SetupError { failure = e.description } catch { failure = error.localizedDescription }
+            DispatchQueue.main.async {
+                self.addingAppleGraphics = false
+                if let failure { self.errorMessage = failure }
+                self.reload()
             }
         }
     }

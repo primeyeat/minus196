@@ -25,6 +25,7 @@ struct Minus196App: App {
             CommandGroup(replacing: .newItem) {
                 Button("New Bottle…") { NotificationCenter.default.post(name: .newBottle, object: nil) }
                     .keyboardShortcut("n")
+                Button("Add Apple’s Graphics…") { NotificationCenter.default.post(name: .appleGraphics, object: nil) }
             }
             CommandGroup(after: .toolbar) {
                 Button("Refresh") { model.reload() }.keyboardShortcut("r")
@@ -33,11 +34,15 @@ struct Minus196App: App {
     }
 }
 
-extension Notification.Name { static let newBottle = Notification.Name("minus196.newBottle") }
+extension Notification.Name {
+    static let newBottle = Notification.Name("minus196.newBottle")
+    static let appleGraphics = Notification.Name("minus196.appleGraphics")
+}
 
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
     @State private var showingNewBottle = false
+    @State private var showingAppleGraphics = false
 
     private var pendingNames: [String] {
         model.activity.keys.sorted().filter { name in !model.bottles.contains { $0.name == name } }
@@ -62,12 +67,12 @@ struct ContentView: View {
                 }
                 .buttonStyle(.borderless)
                 .padding(10)
+                .disabled(!model.hasEngine)
                 .help("A bottle is a separate little Windows for your apps")
             }
         } detail: {
             if !model.hasEngine {
-                Message(symbol: "exclamationmark.triangle", title: "Setup isn't finished",
-                        text: "The part that runs Windows apps is missing on this Mac.")
+                SetupView()
             } else if let bottle = model.selected {
                 BottleDetail(bottle: bottle).id(bottle.name)
             } else if let name = pendingNames.first {
@@ -84,11 +89,113 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingNewBottle) { NewBottleSheet() }
-        .onReceive(NotificationCenter.default.publisher(for: .newBottle)) { _ in showingNewBottle = true }
+        .sheet(isPresented: $showingAppleGraphics) { AppleGraphicsSheet() }
+        .onReceive(NotificationCenter.default.publisher(for: .newBottle)) { _ in if model.hasEngine { showingNewBottle = true } }
+        .onReceive(NotificationCenter.default.publisher(for: .appleGraphics)) { _ in showingAppleGraphics = true }
         .alert("That didn't work", isPresented: Binding(get: { model.errorMessage != nil },
                                                         set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(model.errorMessage ?? "") }
+    }
+}
+
+/// First start: nothing can run until the engine has been downloaded.
+struct SetupView: View {
+    @EnvironmentObject var model: AppModel
+
+    private var megabytes: Int { Int(EngineRelease.current.bytes / 1_000_000) }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "arrow.down.circle").font(.system(size: 44)).foregroundStyle(.tertiary)
+            Text("Welcome to -196").font(.title2.weight(.semibold))
+            if let step = model.setupStep {
+                switch step {
+                case .downloading(let fraction):
+                    ProgressView(value: fraction).frame(width: 280)
+                    Text("Downloading… \(Int(fraction * 100))%").foregroundStyle(.secondary)
+                case .checking:
+                    ProgressView().controlSize(.small)
+                    Text("Checking the download…").foregroundStyle(.secondary)
+                case .unpacking:
+                    ProgressView().controlSize(.small)
+                    Text("Unpacking… this takes about a minute.").foregroundStyle(.secondary)
+                }
+            } else {
+                Text("To run Windows apps, -196 first has to download the part that does the work. It is about \(megabytes) MB and only has to be downloaded once.")
+                    .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 400)
+                if let problem = model.setupProblem {
+                    Text(problem).font(.callout).foregroundStyle(.red).multilineTextAlignment(.center).frame(maxWidth: 400)
+                }
+                if !HostInfo.hasRosetta {
+                    VStack(spacing: 6) {
+                        Text("This Mac also needs Rosetta, Apple’s free add-on for running apps made for Intel Macs. Open the Terminal app, paste this line and press Return:")
+                            .font(.callout).multilineTextAlignment(.center).frame(maxWidth: 400)
+                        HStack {
+                            Text("softwareupdate --install-rosetta").font(.callout.monospaced()).textSelection(.enabled)
+                            Button("Copy") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString("softwareupdate --install-rosetta", forType: .string)
+                            }
+                        }
+                    }
+                    .padding(10)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                }
+                Button(model.setupProblem == nil ? "Download and Set Up" : "Try Again") { model.setUp() }
+                    .buttonStyle(.borderedProminent).controlSize(.large).padding(.top, 6)
+                Text("Downloaded from the -196 page on GitHub. It is the free Wine software, plus graphics add-ons (DXMT, DXVK), and takes about 1 GB on your disk.")
+                    .font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center).frame(maxWidth: 400).padding(.top, 4)
+            }
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Apple's graphics part (D3DMetal) may not be included or downloaded by -196, so the user
+/// fetches Apple's file themselves and hands it over here.
+struct AppleGraphicsSheet: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Add Apple’s Graphics").font(.title2.weight(.semibold))
+            Text("The newest games (the ones that need DirectX 12) and DLSS use a part made by Apple. -196 isn’t allowed to include it or download it for you, but you can get it for free with your Apple Account. Everything else works without it.")
+                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if model.hasAppleGraphics {
+                Label("Apple’s graphics are added on this Mac.", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("1.").bold()
+                    Text("Open Apple’s download page and sign in.")
+                    Spacer()
+                    Button("Open Apple’s Page") {
+                        NSWorkspace.shared.open(URL(string: "https://developer.apple.com/games/game-porting-toolkit/")!)
+                    }
+                }
+                HStack(alignment: .firstTextBaseline) {
+                    Text("2.").bold()
+                    Text("Download “Game Porting Toolkit”. Apple asks you to agree to its terms.")
+                }
+                HStack(alignment: .firstTextBaseline) {
+                    Text("3.").bold()
+                    Text("Choose the file you downloaded.")
+                    Spacer()
+                    if model.addingAppleGraphics { ProgressView().controlSize(.small) }
+                    Button(model.hasAppleGraphics ? "Choose a Newer File…" : "Choose File…") { model.addAppleGraphics() }
+                        .disabled(model.addingAppleGraphics)
+                }
+            }
+            .padding(.vertical, 4)
+            Text("The file ends in .dmg. Apple’s part stays on this Mac. (D3DMetal, from Apple’s Game Porting Toolkit)")
+                .font(.caption).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+            HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
+        }
+        .padding(20)
+        .frame(width: 500)
     }
 }
 

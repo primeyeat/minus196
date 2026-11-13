@@ -247,6 +247,20 @@ struct BottleSettings: View {
                 }
             }
 
+            if !model.hasAppleGraphics {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Newest games").font(.headline)
+                    Text("Games that need DirectX 12, and DLSS, use a part made by Apple that you add yourself.")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Button("Add Apple’s Graphics…") {
+                        dismiss()                       // one sheet at a time: close this one first
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            NotificationCenter.default.post(name: .appleGraphics, object: nil)
+                        }
+                    }
+                }
+            }
+
             VStack(alignment: .leading, spacing: 6) {
                 Toggle("Show speed meter", isOn: envSwitch(bottle, "MTL_HUD_ENABLED")).font(.headline)
                 Text("Shows frames per second in a corner of your games. (Metal HUD)")

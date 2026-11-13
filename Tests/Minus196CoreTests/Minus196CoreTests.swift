@@ -219,4 +219,36 @@ final class Minus196CoreTests: XCTestCase {
         XCTAssertTrue(found[1].target.hasSuffix("/Start Menu/Programs/Steam/Steam.lnk"))   // not the Desktop copy
         XCTAssertFalse(Bottle(config: BottleConfig(name: "x"), directory: tmp.appendingPathComponent("nope")).isRunning)
     }
+
+    /// Builds a tiny archive laid out like a real engine archive and installs it.
+    func testEngineSetupFromArchive() throws {
+        let stage = tmp.appendingPathComponent("stage")
+        for rel in ["engine/bin/wine", "engine/bin/wineserver", "engine/lib/wine/x86_64-unix/ntdll.so",
+                    "engine/lib/wine/x86_64-windows/ntdll.dll", "backends/dxmt/x86_64-windows/d3d11.dll",
+                    "backends/dxvk/x86_64-windows/d3d11.dll", "LICENSES/SOURCE.txt"] {
+            try touch(stage.appendingPathComponent(rel))
+        }
+        let archive = tmp.appendingPathComponent("engine.tar.xz")
+        XCTAssertEqual(try Shell.run("/usr/bin/tar", ["-C", stage.path, "-cJf", archive.path, "."]).status, 0)
+        let installer = EngineInstaller(paths: paths)
+        XCTAssertTrue(installer.isNeeded)
+
+        let wrong = EngineRelease(version: "t-1", url: archive, sha256: String(repeating: "0", count: 64), bytes: 1)
+        XCTAssertThrowsError(try installer.setUp(wrong)) { XCTAssertEqual($0 as? SetupError, .wrongChecksum) }
+        XCTAssertTrue(installer.isNeeded)
+
+        let release = EngineRelease(version: "t-1", url: archive, sha256: try EngineInstaller.sha256(of: archive), bytes: 1)
+        var steps: [SetupStep] = []
+        try installer.setUp(release) { steps.append($0) }
+        XCTAssertEqual(steps.last, .unpacking)
+        XCTAssertFalse(installer.isNeeded)
+        let store = EngineStore(paths: paths)
+        XCTAssertEqual(store.loadSettings().defaultEngine, "minus196-t-1")
+        XCTAssertNil(try store.find("minus196-t-1").firstMissingFile())
+        XCTAssertTrue(fm.fileExists(atPath: paths.backends.appendingPathComponent("dxmt/x86_64-windows/d3d11.dll").path))
+        XCTAssertTrue(fm.fileExists(atPath: paths.engines.appendingPathComponent("minus196-t-1/LICENSES/SOURCE.txt").path))
+        // Nothing is left behind in the data folder.
+        XCTAssertFalse(try fm.contentsOfDirectory(atPath: paths.root.path).contains { $0.hasPrefix("setup-") })
+        XCTAssertFalse(AppleGraphicsInstaller(paths: paths).isInstalled)
+    }
 }

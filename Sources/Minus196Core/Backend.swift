@@ -31,6 +31,11 @@ public struct HostInfo: Equatable {
         self.macOSMajor = macOSMajor; self.isAppleSilicon = isAppleSilicon
     }
 
+    /// Rosetta, Apple's translator for Intel programs; the engine is an Intel build.
+    public static var hasRosetta: Bool {
+        FileManager.default.fileExists(atPath: "/Library/Apple/usr/libexec/oah/libRosettaRuntime")
+    }
+
     public static var current: HostInfo {
         var size = 0
         var arm = false

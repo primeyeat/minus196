@@ -5,6 +5,8 @@ let usage = """
 minus196 — Wine bottle wrapper
 
   minus196 doctor
+  minus196 setup [--archive FILE]              downloads and installs the engine (or uses a local archive)
+  minus196 graphics add <toolkit.dmg>          installs Apple's D3DMetal from your Game Porting Toolkit download
   minus196 engine list
   minus196 engine add <path> [--name NAME]
   minus196 engine default <name>
@@ -63,6 +65,27 @@ do {
 
     case "doctor":
         print(Doctor(paths: paths).report())
+
+    case "setup":
+        let a = Args(argv, valueOptions: ["--archive"], flagOptions: [])
+        let release = EngineRelease.current
+        let source = a.options["--archive"].map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+        var lastShown = -1
+        try EngineInstaller(paths: paths).setUp(release, source: source) { step in
+            switch step {
+            case .downloading(let fraction):
+                let percent = Int(fraction * 100) / 10 * 10
+                if percent != lastShown { lastShown = percent; print("downloading \(percent)%") }
+            case .checking: print("checking the download")
+            case .unpacking: print("unpacking")
+            }
+        }
+        print("installed engine '\(release.engineName)'")
+
+    case "graphics":
+        guard argv.first == "add", argv.count == 2 else { fail("graphics add <Game Porting Toolkit .dmg>") }
+        let image = URL(fileURLWithPath: (argv[1] as NSString).expandingTildeInPath)
+        print("installed: \(try AppleGraphicsInstaller(paths: paths).install(from: image))")
 
     case "engine":
         guard let sub = argv.first else { fail("engine: list | add | default") }
@@ -163,6 +186,8 @@ do {
         fail("unknown command '\(command)'\n\n\(usage)")
     }
 } catch let error as Minus196Error {
+    fail(error.description)
+} catch let error as SetupError {
     fail(error.description)
 } catch {
     fail(error.localizedDescription)
