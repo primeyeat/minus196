@@ -1,0 +1,66 @@
+--- a/dlls/kernelbase/process.c
++++ b/dlls/kernelbase/process.c
+@@ -499,7 +499,46 @@
+     RtlFreeUnicodeString( &titleW );
+     return ret;
+ }
++
++/***********************************************************************
++ *           minus196_append_args
++ *
++ * -196: per-program extra command-line arguments. MINUS196_APPEND_ARGS holds entries
++ * separated by ';', each "program.exe|forbidden|arguments": when a process is created for
++ * program.exe and its command line does not contain the (possibly empty) forbidden text,
++ * the arguments are appended. Returns a new heap string, or NULL to leave things alone.
++ */
++static WCHAR *minus196_append_args( const WCHAR *app_name, const WCHAR *cmd_line )
++{
++    WCHAR rules[2048], *entry, *next, *forbidden, *args, *ret = NULL;
++    const WCHAR *file, *p;
++    DWORD len;
+ 
++    if (!app_name || !cmd_line) return NULL;
++    len = GetEnvironmentVariableW( L"MINUS196_APPEND_ARGS", rules, ARRAY_SIZE(rules) );
++    if (!len || len >= ARRAY_SIZE(rules)) return NULL;
++
++    for (file = p = app_name; *p; p++) if (*p == '\\' || *p == '/') file = p + 1;
++
++    for (entry = rules; entry && *entry; entry = next)
++    {
++        if ((next = wcschr( entry, ';' ))) *next++ = 0;
++        if (!(forbidden = wcschr( entry, '|' ))) continue;
++        *forbidden++ = 0;
++        if (!(args = wcschr( forbidden, '|' ))) continue;
++        *args++ = 0;
++        if (wcsicmp( entry, file ) || !*args) continue;
++        if (*forbidden && wcsstr( cmd_line, forbidden )) continue;
++        if (wcsstr( cmd_line, args )) continue;  /* already there */
++        len = lstrlenW( cmd_line ) + lstrlenW( args ) + 2;
++        if (!(ret = RtlAllocateHeap( GetProcessHeap(), 0, len * sizeof(WCHAR) ))) return NULL;
++        swprintf( ret, len, L"%s %s", cmd_line, args );
++        break;
++    }
++    return ret;
++}
++
++
+ /**********************************************************************
+  *           CreateProcessInternalW   (kernelbase.@)
+  */
+@@ -545,6 +584,16 @@
+         app_name = name;
+     }
+ 
++    /* -196: per-program extra arguments */
++    {
++        WCHAR *extended = minus196_append_args( app_name, tidy_cmdline );
++        if (extended)
++        {
++            if (tidy_cmdline != cmd_line) RtlFreeHeap( GetProcessHeap(), 0, tidy_cmdline );
++            tidy_cmdline = extended;
++        }
++    }
++
+     /* CW Hack 24938 */
+     if (cmd_line && wcsstr(cmd_line, L"EpicGamesLauncher.exe"))
+     {

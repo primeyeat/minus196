@@ -1,0 +1,69 @@
+--- a/dlls/winemac.drv/window.c
++++ b/dlls/winemac.drv/window.c
+@@ -1171,10 +1171,49 @@
+     }
+ }
+ 
++/* -196: client views used to be stacked in the order they were last updated, so with two
++ * rendering child windows in one top-level window (Steam's shop page over its main interface)
++ * the wrong one could end up in front. The helpers below find the view that belongs directly
++ * above a window according to the Win32 z-order, so the view can be placed behind it. */
++static macdrv_view find_client_view_in_tree(HWND hwnd, int depth)
++{
++    struct macdrv_win_data *data;
++    macdrv_view view = NULL;
++    HWND child;
++
++    if (!(NtUserGetWindowLongW(hwnd, GWL_STYLE) & WS_VISIBLE)) return NULL;
++    if ((data = get_win_data(hwnd)))
++    {
++        view = data->client_view;
++        release_win_data(data);
++    }
++    if (view || depth > 8) return view;
++    /* children are listed front to back; keep the last (rearmost) one that has a view */
++    for (child = NtUserGetWindowRelative(hwnd, GW_CHILD); child; child = NtUserGetWindowRelative(child, GW_HWNDNEXT))
++    {
++        macdrv_view found = find_client_view_in_tree(child, depth + 1);
++        if (found) view = found;
++    }
++    return view;
++}
++
++static macdrv_view find_client_view_above(HWND hwnd, HWND toplevel)
++{
++    HWND cur, sibling;
++    macdrv_view view;
++    int levels = 0;
++
++    for (cur = hwnd; cur && cur != toplevel && levels < 16; cur = NtUserGetAncestor(cur, GA_PARENT), levels++)
++        for (sibling = NtUserGetWindowRelative(cur, GW_HWNDPREV); sibling; sibling = NtUserGetWindowRelative(sibling, GW_HWNDPREV))
++            if ((view = find_client_view_in_tree(sibling, 0))) return view;
++    return NULL;
++}
++
+ static void macdrv_client_surface_update(struct client_surface *client)
+ {
+     struct macdrv_client_surface *surface = impl_from_client_surface(client);
+     HWND hwnd = client->hwnd, toplevel = NtUserGetAncestor(hwnd, GA_ROOT);
++    macdrv_view above = NULL;
+     struct macdrv_win_data *data;
+     RECT rect;
+ 
+@@ -1182,11 +1221,15 @@
+ 
+     NtUserGetClientRect(hwnd, &rect, NtUserGetWinMonitorDpi(hwnd, MDT_RAW_DPI));
+     NtUserMapWindowPoints(hwnd, toplevel, (POINT *)&rect, 2, NtUserGetWinMonitorDpi(toplevel, MDT_RAW_DPI));
++
++    /* -196: looked up before taking the top-level window's data (see above) */
++    if (toplevel != hwnd) above = find_client_view_above(hwnd, toplevel);
++    if (above == surface->cocoa_view) above = NULL;
+ 
+     if (!(data = get_win_data(toplevel))) return;
+     OffsetRect(&rect, data->rects.client.left - data->rects.visible.left, data->rects.client.top - data->rects.visible.top);
+     macdrv_set_view_frame(surface->cocoa_view, cgrect_from_rect(rect));
+-    macdrv_set_view_superview(surface->cocoa_view, toplevel == hwnd ? NULL : data->client_view, data->cocoa_window, NULL, NULL);
++    macdrv_set_view_superview(surface->cocoa_view, toplevel == hwnd ? NULL : data->client_view, data->cocoa_window, above, NULL);
+     release_win_data(data);
+ }
+ 

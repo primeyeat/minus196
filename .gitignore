@@ -1,0 +1,21 @@
+# Swift build output and the packaged app
+.build/
+.swiftpm/
+*.xcodeproj
+build/
+
+# Engine build trees, installed engines and downloaded sources/installers
+engine/build-*/
+engine/dist/
+engine/downloads/
+*.log
+
+# Apple's Game Porting Toolkit files are under Apple's licence: never commit them
+*.dmg
+backends/
+
+# Private working notes
+HANDOFF.md
+DESIGN.md
+
+.DS_Store
