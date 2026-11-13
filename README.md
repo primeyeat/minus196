@@ -27,7 +27,7 @@ On a MacBook Air (M5), macOS 27:
 | Steam | installs, signs in, shop and library draw |
 | The Binding of Isaac (OpenGL) | runs |
 | Hollow Knight (DirectX 11, DXMT) | runs at a steady 60 fps |
-| Control (DirectX 12, D3DMetal) | about 50 fps at Medium, no ray tracing; the DLSS option can be switched on |
+| Control (DirectX 12, D3DMetal) | about 50 fps at Medium, no ray tracing; about 81 fps with DLSS switched on (bridged to Apple's MetalFX) |
 
 Not tested or not done yet: sound, long play sessions, Gecko (web views), SDL (controllers),
 GStreamer (video), winetricks, an app icon, and `engine/build-engine.sh` as one uninterrupted
