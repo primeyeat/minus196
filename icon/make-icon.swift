@@ -37,11 +37,11 @@ func draw() {
     }
     NSGraphicsContext.restoreGraphicsState()
 
-    // The can, tilted a little.
+    // The can, upright.
     NSGraphicsContext.saveGraphicsState()
     let turn = NSAffineTransform()
     turn.translateX(by: 512, yBy: 512)
-    turn.rotate(byDegrees: -8)
+    turn.rotate(byDegrees: 0)
     turn.translateX(by: -512, yBy: -512)
     turn.concat()
 
@@ -91,22 +91,22 @@ func draw() {
                 controlPoint1: NSPoint(x: right - 90, y: labelBottom - curve), controlPoint2: NSPoint(x: left + 90, y: labelBottom - curve))
     label.close()
     NSGradient(colorsAndLocations:
-        (colour(6, 30, 78), 0), (colour(24, 92, 178), 0.3), (colour(40, 120, 205), 0.42),
-        (colour(14, 60, 130), 0.72), (colour(4, 22, 60), 1))!.draw(in: label, angle: 0)
+        (colour(196, 132, 0), 0), (colour(255, 205, 20), 0.3), (colour(255, 226, 70), 0.42),
+        (colour(240, 178, 0), 0.72), (colour(170, 108, 0), 1))!.draw(in: label, angle: 0)
 
     // "-196"
     let style = NSMutableParagraphStyle()
     style.alignment = .center
     let font = NSFont.systemFont(ofSize: 150, weight: .heavy)
     let text = NSAttributedString(string: "-196", attributes: [
-        .font: font, .foregroundColor: NSColor.white, .paragraphStyle: style, .kern: -4,
+        .font: font, .foregroundColor: colour(14, 26, 58), .paragraphStyle: style, .kern: -4,
     ])
     let textHeight = text.size().height
     let middle = (labelTop + labelBottom) / 2 - curve / 2
     text.draw(in: NSRect(x: left, y: middle - textHeight / 2, width: width, height: textHeight))
 
     // A thin frost line under the text.
-    colour(170, 225, 250, 0.9).setFill()
+    colour(14, 26, 58, 0.85).setFill()
     NSBezierPath(roundedRect: NSRect(x: left + 95, y: middle - textHeight / 2 - 6, width: width - 190, height: 9),
                  xRadius: 4.5, yRadius: 4.5).fill()
     NSGraphicsContext.restoreGraphicsState()
