@@ -67,3 +67,18 @@
      release_win_data(data);
  }
  
+--- a/dlls/winemac.drv/cocoa_window.m
++++ b/dlls/winemac.drv/cocoa_window.m
+@@ -3935,6 +3935,12 @@
+ 
+         if (!superview)
+             superview = [window contentView];
++
++        /* -196: the reference view was looked up on another thread and may have been
++         * disposed of since; only use it if it is still one of the superview's subviews
++         * (a comparison of pointers, the view itself is not touched). */
++        if (prev && [[superview subviews] indexOfObjectIdenticalTo:prev] == NSNotFound) prev = nil;
++        if (next && [[superview subviews] indexOfObjectIdenticalTo:next] == NSNotFound) next = nil;
+ 
+         if (superview == [view superview])
+         {
