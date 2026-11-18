@@ -6,7 +6,7 @@ public struct Shortcut: Equatable, Identifiable {
     public let name: String
     /// What to hand to `Launcher.run`: the shortcut file's Unix path, or the address itself.
     public let target: String
-    /// A Windows icon file (.ico) for it, as a Unix path, when the shortcut names one.
+    /// The file its icon comes from, as a Unix path: an icon file (.ico) or a program (.exe, .dll).
     public var iconPath: String? = nil
     public var id: String { name.lowercased() }
 }
@@ -91,6 +91,8 @@ public struct ShortcutScanner {
                     guard let address = Self.programAddress(inURLFile: text) else { continue }
                     target = address
                     icon = Self.iconPath(inURLFile: text, prefix: prefix)
+                } else {
+                    icon = WindowsShortcut(contentsOf: url)?.iconSource(prefix: prefix)
                 }
                 seen.insert(name.lowercased())
                 out.append(Shortcut(name: name, target: target, iconPath: icon))

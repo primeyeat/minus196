@@ -48,6 +48,30 @@ public struct Engine: Equatable {
         return data.range(of: Data("libgnutls".utf8)) != nil
     }
 
+    private func hasAddOn(_ name: String) -> Bool {
+        let folder = root.appendingPathComponent("share/wine/\(name)", isDirectory: true)
+        return !((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).isEmpty
+    }
+
+    /// True when Wine Mono (the replacement for Microsoft's .NET Framework) is in the engine.
+    public var hasMono: Bool { hasAddOn("mono") }
+    /// True when Wine Gecko (shows web pages inside Windows programs) is in the engine.
+    public var hasGecko: Bool { hasAddOn("gecko") }
+
+    /// True when SDL, which Wine uses for game controllers, is in the engine.
+    public var hasControllerLibrary: Bool {
+        FileManager.default.fileExists(atPath: root.appendingPathComponent("lib/libSDL2-2.0.0.dylib").path)
+    }
+
+    /// DLLs kept switched off while Wine sets up or updates a bottle, so that its "install
+    /// Mono / Gecko?" dialogs cannot block. A part that is in the engine is left on: Wine then
+    /// registers it in the bottle without asking, which installers that look for .NET need.
+    /// nil when nothing has to be switched off.
+    public var setupOverrides: String? {
+        let off = (hasMono ? [] : ["mscoree"]) + (hasGecko ? [] : ["mshtml"])
+        return off.isEmpty ? nil : off.joined(separator: ",") + "="
+    }
+
     public var gstreamerPlugins: URL? {
         for rel in ["lib/gstreamer-1.0", "lib64/gstreamer-1.0"] {
             let url = root.appendingPathComponent(rel, isDirectory: true)

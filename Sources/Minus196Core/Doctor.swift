@@ -17,7 +17,9 @@ public struct Doctor {
         for e in engines {
             let state = e.firstMissingFile().map { "INVALID, missing \($0)" } ?? "ok"
             let extras = [e.supports32Bit ? "32-bit" : "no 32-bit", e.supportsTLS ? "TLS" : "no TLS (HTTPS will fail)",
-                          e.moltenVK != nil ? "MoltenVK" : "no MoltenVK"]
+                          e.moltenVK != nil ? "MoltenVK" : "no MoltenVK", e.hasMono ? "Mono" : "no Mono",
+                          e.hasGecko ? "Gecko" : "no Gecko", e.gstreamerPlugins != nil ? "video" : "no video",
+                          e.hasControllerLibrary ? "SDL" : "no SDL"]
             out.append("  \(e.name)\(e.name == def ? " (default)" : ""): \(state); \(extras.joined(separator: ", ")); \(e.root.path)")
         }
         let engine = def.flatMap { try? store.find($0) } ?? engines.first

@@ -18,7 +18,7 @@ struct BottleDetail: View {
 
     private var tiles: [AppTile] {
         var out = bottle.config.programs.map {
-            AppTile(id: "pin:" + $0.path, name: $0.name, iconPath: nil, program: $0.path, args: $0.args,
+            AppTile(id: "pin:" + $0.path, name: $0.name, iconPath: $0.path, program: $0.path, args: $0.args,
                     cwd: $0.workingDirectory, pinned: $0)
         }
         let pinnedNames = Set(out.map { $0.name.lowercased() })
@@ -64,9 +64,14 @@ struct BottleDetail: View {
                 Button { model.stop(bottle) } label: { Label("Quit All", systemImage: "xmark.circle") }
                     .help("Close everything that is running in this bottle")
             }
-            Button { model.runFile(in: bottle) } label: { Label("Install App…", systemImage: "square.and.arrow.down") }
-                .buttonStyle(.borderedProminent)
-                .help("Choose a Windows installer or program you downloaded (.exe or .msi)")
+            Menu {
+                Button("Choose an Installer…") { model.runFile(in: bottle) }
+                Section("Game stores") {
+                    ForEach(GameStore.all) { store in Button(store.name) { model.install(store, in: bottle) } }
+                }
+            } label: { Label("Install App…", systemImage: "square.and.arrow.down") }
+                .menuStyle(.borderedButton).fixedSize()
+                .help("Choose a Windows installer you downloaded (.exe or .msi), or get a game store")
             Button { showingSettings = true } label: { Image(systemName: "gearshape") }
                 .help("Settings for this bottle")
         }
@@ -80,9 +85,16 @@ struct BottleDetail: View {
             Text("Install a Windows app to get started. After installing, it shows up here and you start it with one click.")
                 .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 400)
             HStack(spacing: 10) {
-                Button { model.installSteam(in: bottle) } label: { Label("Install Steam", systemImage: "gamecontroller") }
+                Button { model.install(.steam, in: bottle) } label: { Label("Install Steam", systemImage: "gamecontroller") }
                     .buttonStyle(.borderedProminent)
                     .help("Downloads the Steam installer from Valve and starts it")
+                Menu("Other Game Stores") {
+                    ForEach(GameStore.all.filter { $0 != .steam }) { store in
+                        Button(store.name) { model.install(store, in: bottle) }
+                    }
+                }
+                .fixedSize()
+                .help("Downloads the store's installer from its maker and starts it")
                 Button { model.runFile(in: bottle) } label: { Label("Install Another App…", systemImage: "square.and.arrow.down") }
             }
             .controlSize(.large).padding(.top, 4)
@@ -137,10 +149,19 @@ struct AppIcon: View {
     let iconPath: String?
 
     private static var cache: [String: NSImage] = [:]
+    private static var missing: Set<String> = []
     private var image: NSImage? {
         guard let iconPath else { return nil }
         if let hit = Self.cache[iconPath] { return hit }
-        guard let loaded = NSImage(contentsOfFile: iconPath) else { return nil }
+        if Self.missing.contains(iconPath) { return nil }
+        // An icon file is read as it is; a program's icon is taken out of the program.
+        let isIconFile = iconPath.lowercased().hasSuffix(".ico")
+        guard let loaded = isIconFile ? NSImage(contentsOfFile: iconPath)
+                                      : WindowsIcon.icon(inProgramAt: iconPath).flatMap(NSImage.init(data:)),
+              !loaded.representations.isEmpty else {
+            Self.missing.insert(iconPath)
+            return nil
+        }
         // An .ico holds several sizes; draw from the largest.
         if let best = loaded.representations.max(by: { $0.pixelsWide < $1.pixelsWide }) {
             loaded.size = NSSize(width: best.pixelsWide, height: best.pixelsHigh)
@@ -281,6 +302,10 @@ struct BottleSettings: View {
                             .help("Opens this bottle's Windows drive (C:) in Finder")
                         Button("Add Existing App…") { model.pinProgram(in: bottle) }
                             .help("An installed app is missing from the list? Pick its .exe to add it")
+                        Button("Save Problem Report") { dismiss(); model.saveProblemReport() }
+                            .help("Puts a file on your Desktop that you can send when asking for help")
+                    }
+                    HStack(spacing: 8) {
                         Button("Show Error Report") {
                             if let log = model.latestLog(of: bottle) { NSWorkspace.shared.open(log) }
                             else { model.errorMessage = "Nothing has been run in this bottle yet." }

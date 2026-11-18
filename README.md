@@ -16,7 +16,7 @@ a trademark of CodeWeavers.
    open it, and drag `-196` onto the Applications folder next to it.
 2. Open it. The app is not signed with an Apple developer certificate, so macOS warns the
    first time: open System Settings, go to Privacy & Security, and choose "Open Anyway".
-3. Click "Download and Set Up". The app fetches its Windows engine (about 190 MB, about 1 GB
+3. Click "Download and Set Up". The app fetches its Windows engine (about 290 MB, about 1.4 GB
    unpacked) from this repository's releases, checks it against a built-in checksum, and
    unpacks it. This happens once.
 4. Optional, for DirectX 12 games and DLSS: choose File > Add Apple's Graphics and follow the
@@ -30,7 +30,12 @@ Needs an Apple silicon Mac with macOS 14 or later, and Rosetta (macOS offers to 
 - Runs a program in a bottle and keeps a log for each run.
 - Picks a graphics layer per bottle: Apple's D3DMetal (DirectX 11 and 12), DXMT (DirectX 10/11),
   DXVK, or Wine's own.
-- Finds the programs installed in a bottle and shows them as tiles in the app.
+- Finds the programs installed in a bottle and shows them as tiles with their own icons.
+- Fetches the installers of game stores (Steam, Epic Games, GOG Galaxy, Battle.net, EA app,
+  Ubisoft Connect) from their makers and starts them in a bottle.
+- Tells you when a newer -196 or a newer engine has been released.
+- Help > Report a Problem saves a file with your Mac model, settings and recent logs (account
+  name removed) to attach when asking for help.
 - Per-program rules (graphics layer, environment variables, DLL overrides, extra arguments).
 
 ## What has been tried
@@ -44,9 +49,15 @@ On a MacBook Air (M5), macOS 27:
 | Hollow Knight (DirectX 11, DXMT) | runs at a steady 60 fps |
 | Control (DirectX 12, D3DMetal) | about 50 fps at Medium, no ray tracing; about 81 fps with DLSS switched on (bridged to Apple's MetalFX) |
 
-Not tested or not done yet: sound, long play sessions, Gecko (web views), SDL (controllers),
-GStreamer (video), winetricks, and `engine/build-engine.sh` as one uninterrupted
-run (the engine was built step by step).
+The installers of Epic Games, GOG Galaxy, Battle.net, EA app and Ubisoft Connect open their
+setup window; whether each store then installs, signs in and runs games has not been tried.
+
+The engine includes SDL for game controllers (it loads, but no controller has been tried),
+GStreamer for video (a test program decodes an H.264 file through Media Foundation; no game's
+videos have been checked), and Wine Mono and Wine Gecko for .NET and web views.
+
+Not tested or not done yet: sound, long play sessions, winetricks, and
+`engine/build-engine.sh` as one uninterrupted run (the engine was built step by step).
 
 ## What is in this repository, and what is not
 
@@ -63,7 +74,7 @@ Not in it, and you have to get them yourself:
 - **Apple's D3DMetal.** It comes from Apple's Game Porting Toolkit, which you download with your
   own Apple account under Apple's licence. `engine/install-gptk.sh` installs it from the disk
   image you downloaded. Without it you still have DXMT, DXVK and Wine's own graphics.
-- **DXMT, DXVK, MoltenVK, Wine Mono.** Built or downloaded from their own projects by the
+- **DXMT, DXVK, MoltenVK, SDL, GStreamer, Wine Mono, Wine Gecko.** Built or downloaded from their own projects by the
   scripts in `engine/`; built copies are in the same release archive.
 
 The project must not be pointed at the Wine inside an installed CrossOver.app; build the
@@ -85,11 +96,14 @@ The engine (unpack the CodeWeavers source first; pass the path of its `sources` 
     engine/build-freetype.sh <sources>
     engine/build-gnutls.sh
     engine/build-moltenvk.sh
+    engine/build-sdl.sh
+    engine/install-gstreamer.sh
     engine/build-engine.sh <sources>
     engine/build-compat-hook.sh
     engine/build-dxvk.sh
     engine/build-dxmt.sh
     engine/install-mono.sh
+    engine/install-gecko.sh
     engine/install-gptk.sh <Game Porting Toolkit .dmg>     # optional
 
 Read each script before running it: they were written for one machine and say at the top what
@@ -110,6 +124,8 @@ the built files.
     minus196 doctor
     minus196 setup [--archive FILE]              download and install the engine
     minus196 graphics add <toolkit.dmg>          install Apple's D3DMetal from your download
+    minus196 report [bottle]                     print a problem report
+    minus196 update                              is there a newer -196?
     minus196 engine list | add <path> [--name NAME] | default <name>
     minus196 bottle list | info <name> | delete <name> | duplicate <name> <new-name>
     minus196 bottle create <name> [--arch win64|win32] [--winver win10] [--backend auto|d3dmetal|dxmt|dxvk|wined3d]
@@ -135,13 +151,16 @@ Everything lives in `~/Library/Application Support/minus196` (set `MINUS196_HOME
   Only run programs you trust.
 - A `bottle.json` or `rules.json` from someone else can change how programs are started.
   Treat them like programs: don't use ones you don't trust.
-- The app uses the network for two things: the first-start engine download from this
-  repository's releases (over HTTPS, checked against a SHA-256 checksum built into the app),
-  and the "Install Steam" button, which downloads Valve's installer from Valve's server and
-  runs it. There is no telemetry.
+- The app uses the network for three things: the engine download from this repository's
+  releases (over HTTPS, checked against a SHA-256 checksum built into the app); a look at
+  this repository's public release list when the app starts, to see whether a newer version
+  exists (switch it off in the -196 menu; nothing about you or your Mac is sent); and the
+  game store buttons, which download that store's installer from its maker's server and run
+  it. Store installers are not checked against a checksum, since their makers change them
+  at will. There is no telemetry.
 - Apple's graphics files are only installed if they carry Apple's own code signature.
-- The build scripts download source code. LLVM and Wine Mono are checked against recorded
-  checksums; DXMT is fetched by its release tag, and the nettle, Vulkan-Headers and cereal
+- The build scripts download source code and packages. LLVM, SDL, GStreamer, Wine Mono and
+  Wine Gecko are checked against recorded checksums; DXMT is fetched by its release tag, and the nettle, Vulkan-Headers and cereal
   archives are ones you fetch yourself and are not checked.
 - For Steam's built-in browser the engine adds `--in-process-gpu`, which removes one layer of
   that browser's own process separation. Without it Steam's windows stay blank.

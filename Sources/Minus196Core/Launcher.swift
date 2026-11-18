@@ -66,10 +66,9 @@ public struct Launcher {
         try engine.validate()
         let bottle = try store.create(config)
         do {
-            // Disabling mscoree and mshtml during first boot stops Wine's "install Mono / Gecko?"
-            // dialogs, which would otherwise block creation until someone clicks them.
+            // See Engine.setupOverrides: keeps Wine's "install Mono / Gecko?" dialogs from blocking.
             try tool(bottle, engine: engine, ["wineboot", "--init"], label: "wineboot-init",
-                     extraEnv: ["WINEDLLOVERRIDES": "mscoree,mshtml="])
+                     extraEnv: engine.setupOverrides.map { ["WINEDLLOVERRIDES": $0] } ?? [:])
             try tool(bottle, engine: engine, ["winecfg", "/v", config.windowsVersion], label: "winecfg-version")
             let home = fm.homeDirectoryForCurrentUser
             let y = bottle.prefix.appendingPathComponent("dosdevices/y:")
@@ -153,7 +152,7 @@ public struct Launcher {
         // The update ends with stopping the bottle; never do that under a running program.
         guard prefixNeedsUpdate(bottle, engine: engine), !bottle.isRunning else { return }
         try tool(bottle, engine: engine, ["wineboot", "--update"], label: "wineboot-update",
-                 extraEnv: ["WINEDLLOVERRIDES": "mscoree,mshtml="])
+                 extraEnv: engine.setupOverrides.map { ["WINEDLLOVERRIDES": $0] } ?? [:])
         // wineboot also starts the bottle's autostart programs (Steam registers itself with
         // "-silent"). Waiting for them would block for as long as they run, and they would keep
         // this tool environment, so stop everything and let the real launch start clean.

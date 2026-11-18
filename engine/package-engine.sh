@@ -8,11 +8,11 @@
 #                  LICENSES/  licence texts, and SOURCE.txt saying where the source is
 # Never in it: Apple's D3DMetal (backends/gptk). That is under Apple's licence.
 #
-# Usage: engine/package-engine.sh [version]        e.g. engine/package-engine.sh 26.3-1
+# Usage: engine/package-engine.sh [version]        e.g. engine/package-engine.sh 26.3-2
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 source "$HERE/env.sh"
-VERSION="${1:-26.3-1}"
+VERSION="${1:-26.3-2}"
 HOME_DIR="${MINUS196_HOME:-$HOME/Library/Application Support/minus196}"
 OUT="$HERE/build-package"
 STAGE="$OUT/minus196-engine"
@@ -31,6 +31,7 @@ cp "$DIST/bin/wine" "$DIST/bin/wineserver" "$STAGE/engine/bin/"
 # Headers, import libraries, pkg-config files and manual pages are only needed for building.
 rsync -a --exclude 'pkgconfig' --exclude '*.la' --exclude '*.a' "$DIST/lib" "$STAGE/engine/"
 rsync -a --exclude 'man' "$DIST/share" "$STAGE/engine/"
+[ -d "$DIST/libexec" ] && rsync -a "$DIST/libexec" "$STAGE/engine/"
 rsync -a "$HOME_DIR/backends/dxmt" "$HOME_DIR/backends/dxvk" "$STAGE/backends/"
 echo "$VERSION" > "$STAGE/VERSION"
 
@@ -58,6 +59,9 @@ relocate() {   # file, search path relative to the file
 for f in "$STAGE/engine/bin/"*;                  do relocate "$f" "@loader_path/../lib"; done
 for f in "$STAGE/engine/lib/"*.dylib;            do [ -L "$f" ] || relocate "$f" "@loader_path"; done
 for f in "$STAGE/engine/lib/wine/x86_64-unix/"*; do relocate "$f" "@loader_path/../.."; done
+# GStreamer's plugins and helper come relocatable; only a build-folder path would need fixing.
+for f in "$STAGE/engine/lib/gstreamer-1.0/"*.dylib; do [ -e "$f" ] && relocate "$f" "@loader_path/.."; done
+for f in "$STAGE/engine/libexec/gstreamer-1.0/"*;   do [ -e "$f" ] && relocate "$f" "@loader_path/../../lib"; done
 
 # Nothing may still point into the build folder through a load command.
 left=0
@@ -111,7 +115,9 @@ copy_licence "$SRC/dxvk/LICENSE"                            "DXVK-LICENSE.txt"
 copy_licence "$HERE/build-deps/dxmt-src/dxmt/LICENSE"       "DXMT-LICENSE.txt"
 copy_licence "$HERE/build-deps/nettle/COPYING.LESSERv3"     "Nettle-GMP-COPYING.LESSERv3.txt"
 copy_licence "$HERE/build-deps/nettle/COPYINGv2"            "Nettle-GMP-COPYINGv2.txt"
-# GnuTLS is under the LGPL 2.1 or later: the same text as Wine-COPYING.LIB.txt.
+copy_licence "$HERE/build-deps/sdl/LICENSE.txt"             "SDL-LICENSE.txt"
+# GnuTLS, GStreamer, GLib and FFmpeg (as built by the GStreamer project) are under the LGPL 2.1
+# or later: the same text as Wine-COPYING.LIB.txt.
 # Wine Mono's own licence notes are inside engine/share/wine/mono.
 cat > "$STAGE/LICENSES/SOURCE.txt" <<EOF
 -196 engine $VERSION
@@ -131,6 +137,13 @@ GnuTLS (LGPL 2.1 or later)          https://www.gnutls.org
 Nettle, Hogweed (LGPL 3 / GPL 2)    https://www.lysator.liu.se/~nisse/nettle/
 GMP (LGPL 3 / GPL 2)                https://gmplib.org
 Wine Mono (MIT, LGPL and others)    https://gitlab.winehq.org/wine/wine-mono
+Wine Gecko 2.47.4 (MPL 2.0)         https://dl.winehq.org/wine/wine-gecko/2.47.4/ (source archive there)
+SDL 2.32.10 (zlib)                  https://github.com/libsdl-org/SDL
+GStreamer 1.28.9, with GLib, FFmpeg and the codec libraries its plugins use (LGPL 2.1 or
+    later, and BSD/MIT-style licences), taken unchanged from the GStreamer project's macOS
+    package (x86_64 half only, GPL sub-packages left out):
+    https://gstreamer.freedesktop.org/data/pkg/osx/1.28.9/   source: https://gstreamer.freedesktop.org/src/
+    and https://gitlab.freedesktop.org/gstreamer/cerbero (the recipes that build the package)
 DXVK $(cat "$HOME_DIR/backends/dxvk/VERSION" 2>/dev/null) (zlib)        https://github.com/doitsujin/dxvk
 DXMT $(cat "$HOME_DIR/backends/dxmt/VERSION" 2>/dev/null) (zlib)          https://github.com/3Shain/dxmt
 

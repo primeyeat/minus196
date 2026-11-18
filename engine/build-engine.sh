@@ -52,6 +52,12 @@ echo "==> Installing build tools"
 # Toolchain environment (PATH, CC, CFLAGS, pkg-config scope) lives in env.sh.
 SRC="$SRC" NAME="$NAME" source "$HERE/env.sh"
 
+# Game controllers (SDL) and video playback (GStreamer) go into the engine before Wine is
+# configured, so that configure finds them.
+[ -f "$DIST/lib/libSDL2-2.0.0.dylib" ] || "$HERE/build-sdl.sh"
+[ -f "$HERE/build-deps/gstreamer/gstreamer-env.sh" ] || "$HERE/install-gstreamer.sh"
+source "$HERE/build-deps/gstreamer/gstreamer-env.sh"
+
 mkdir -p "$BUILD" "$DIST"
 cd "$BUILD"
 
@@ -63,8 +69,8 @@ $X86 "$SRC/wine/configure" \
     --disable-tests \
     --with-mingw --with-freetype --with-coreaudio \
     --without-x --without-alsa --without-pulse --without-oss --without-v4l2 --without-gphoto --without-sane \
-    --without-cups --without-krb5 --without-capi --without-usb --without-gstreamer \
-    --with-gnutls --without-sdl --with-vulkan
+    --without-cups --without-krb5 --without-capi --without-usb --with-gstreamer \
+    --with-gnutls --with-sdl --with-vulkan
 
 echo "==> Building"
 $X86 make -j"$(sysctl -n hw.ncpu)" "CFLAGS=$CFLAGS"
@@ -74,6 +80,8 @@ $X86 make install
 
 # .NET programs (many game launchers) need Wine Mono in the engine.
 SRC="$SRC" NAME="$NAME" "$HERE/install-mono.sh"
+# Web pages inside Windows programs (installers, launchers) need Wine Gecko in the engine.
+SRC="$SRC" NAME="$NAME" "$HERE/install-gecko.sh"
 
 echo "==> Done"
 "$DIST/bin/wine" --version

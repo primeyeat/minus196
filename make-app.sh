@@ -11,7 +11,9 @@ rm -rf "$APP" && mkdir -p "$APP/Contents/MacOS"
 cp "$(swift build -c release --show-bin-path)/Minus196App" "$APP/Contents/MacOS/minus196"
 mkdir -p "$APP/Contents/Resources"
 cp "$HERE/icon/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"   # made by icon/make-icon.swift
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+VERSION="$(sed -n 's/.*static let version = "\(.*\)".*/\1/p' "$HERE/Sources/Minus196Core/Updates.swift")"
+[ -n "$VERSION" ] || { echo "could not read the version from Updates.swift" >&2; exit 1; }
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -21,9 +23,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleExecutable</key><string>minus196</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1</string>
+    <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>1</string>
-    <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
     <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

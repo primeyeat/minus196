@@ -251,4 +251,74 @@ final class Minus196CoreTests: XCTestCase {
         XCTAssertFalse(try fm.contentsOfDirectory(atPath: paths.root.path).contains { $0.hasPrefix("setup-") })
         XCTAssertFalse(AppleGraphicsInstaller(paths: paths).isInstalled)
     }
+
+    func testVersionComparison() {
+        XCTAssertTrue(UpdateChecker.isNewer("0.10", than: "0.9"))
+        XCTAssertTrue(UpdateChecker.isNewer("1.0.1", than: "1.0"))
+        XCTAssertFalse(UpdateChecker.isNewer("1.0", than: "1"))
+        XCTAssertFalse(UpdateChecker.isNewer("0.2", than: "0.2"))
+        XCTAssertFalse(UpdateChecker.isNewer("0.3-beta", than: "0.2"))
+        XCTAssertFalse(UpdateChecker.isNewer("../../x", than: "0.2"))
+    }
+
+    func testNewestRelease() {
+        let base = "https://github.com/primeyeat/minus196/releases"
+        let json = """
+        [{"tag_name":"engine-26.3-2","draft":false,"prerelease":false,"html_url":"\(base)/tag/engine-26.3-2","assets":[]},
+         {"tag_name":"v0.3","draft":false,"prerelease":false,"html_url":"\(base)/tag/v0.3",
+          "assets":[{"browser_download_url":"\(base)/download/v0.3/minus196.dmg"}]},
+         {"tag_name":"v0.9","draft":false,"prerelease":true,"html_url":"\(base)/tag/v0.9","assets":[]},
+         {"tag_name":"v0.5","draft":false,"prerelease":false,"html_url":"https://example.com/elsewhere",
+          "assets":[{"browser_download_url":"https://example.com/minus196.dmg"}]},
+         {"tag_name":"v0.2","draft":false,"prerelease":false,"html_url":"\(base)/tag/v0.2","assets":[]}]
+        """
+        let found = UpdateChecker.newest(inReleaseList: Data(json.utf8), newerThan: "0.2")
+        XCTAssertEqual(found, AvailableUpdate(version: "0.3", download: URL(string: "\(base)/download/v0.3/minus196.dmg")!))
+        XCTAssertNil(UpdateChecker.newest(inReleaseList: Data(json.utf8), newerThan: "0.3"))
+        XCTAssertNil(UpdateChecker.newest(inReleaseList: Data("not json".utf8), newerThan: "0.1"))
+    }
+
+    func testReportHidesTheAccount() throws {
+        let text = ProblemReport.scrub("/Users/sam/Library/x C:\\users\\sam\\Desktop Z:\\Users\\sam", home: "/Users/sam", user: "sam")
+        XCTAssertEqual(text, "~/Library/x C:\\users\\user\\Desktop Z:\\Users\\user")
+        let bottle = try BottleStore(paths: paths).create(BottleConfig(name: "R"))
+        try fm.createDirectory(at: bottle.logs, withIntermediateDirectories: true)
+        try Data("first line\nlast line\n".utf8).write(to: bottle.logs.appendingPathComponent("20260101-000000-x.log"))
+        let report = ProblemReport(paths: paths).text(bottleName: "R")
+        XCTAssertTrue(report.contains("== Bottle \"R\""))
+        XCTAssertTrue(report.contains("last line"))
+        XCTAssertFalse(report.contains(NSHomeDirectory()))
+    }
+
+    func testDamagedFilesGiveNoIcon() {
+        XCTAssertNil(WindowsIcon.icon(inProgram: Data()))
+        XCTAssertNil(WindowsIcon.icon(inProgram: Data([0x4D, 0x5A] + [UInt8](repeating: 0xFF, count: 200))))
+        XCTAssertNil(WindowsShortcut(data: Data([0x4C, 0, 0, 0])))
+        // A shortcut header that claims strings which are not there.
+        var lnk = Data([0x4C, 0, 0, 0] + [UInt8](repeating: 0, count: 0x48))
+        lnk[0x14] = 0xC0
+        XCTAssertNil(WindowsShortcut(data: lnk)?.iconLocation)
+    }
+
+    func testEngineUpdateReplacesOurOlderDownload() throws {
+        func archive(_ tag: String) throws -> EngineRelease {
+            let stage = tmp.appendingPathComponent("stage-\(tag)")
+            for rel in ["engine/bin/wine", "engine/bin/wineserver", "engine/lib/wine/x86_64-unix/ntdll.so",
+                        "engine/lib/wine/x86_64-windows/ntdll.dll"] { try touch(stage.appendingPathComponent(rel)) }
+            let file = tmp.appendingPathComponent("\(tag).tar.xz")
+            XCTAssertEqual(try Shell.run("/usr/bin/tar", ["-C", stage.path, "-cJf", file.path, "."]).status, 0)
+            return EngineRelease(version: tag, url: file, sha256: try EngineInstaller.sha256(of: file), bytes: 1)
+        }
+        let installer = EngineInstaller(paths: paths)
+        let one = try archive("1"), two = try archive("2")
+        try installer.setUp(one)
+        XCTAssertFalse(installer.updateAvailable(one))
+        XCTAssertTrue(installer.updateAvailable(two))
+        try installer.setUp(two)
+        XCTAssertEqual(EngineStore(paths: paths).loadSettings().defaultEngine, "minus196-2")
+        XCTAssertEqual(EngineStore(paths: paths).list().map(\.name), ["minus196-2"])
+        // An engine the user registered themselves is never treated as out of date.
+        try EngineStore(paths: paths).setDefault(try fakeEngine("mine").name)
+        XCTAssertFalse(installer.updateAvailable(two))
+    }
 }

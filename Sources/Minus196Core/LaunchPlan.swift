@@ -83,6 +83,8 @@ public struct LaunchPlanner {
         if let gst = engine.gstreamerPlugins {
             env["GST_PLUGIN_SYSTEM_PATH"] = gst.path
             env["GST_REGISTRY"] = bottle.directory.appendingPathComponent("gstreamer-registry.bin").path
+            let scanner = engine.root.appendingPathComponent("libexec/gstreamer-1.0/gst-plugin-scanner")
+            if FileManager.default.fileExists(atPath: scanner.path) { env["GST_PLUGIN_SCANNER"] = scanner.path }
         }
 
         var overrides = bottle.config.dllOverrides

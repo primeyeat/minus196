@@ -22,6 +22,12 @@ final class AppModel: ObservableObject {
     @Published var setupStep: SetupStep?
     @Published var setupProblem: String?
     @Published var hasAppleGraphics = false
+    /// A newer -196 found on the releases page.
+    @Published var update: AvailableUpdate?
+    /// The installed engine is an older download and a newer one can be fetched.
+    @Published var engineUpdateAvailable = false
+    /// A plain message that is not an error.
+    @Published var notice: String?
     @Published var addingAppleGraphics = false
     /// Tiles showing "Starting…" (bottle name + "/" + tile id).
     @Published var launching: Set<String> = []
@@ -34,6 +40,7 @@ final class AppModel: ObservableObject {
 
     func start() {
         reload()
+        checkForUpdates(manual: false)
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshRunning() }
         }
@@ -43,6 +50,7 @@ final class AppModel: ObservableObject {
         bottles = (try? BottleStore(paths: paths).list()) ?? []
         hasEngine = !EngineStore(paths: paths).list().isEmpty
         hasAppleGraphics = AppleGraphicsInstaller(paths: paths).isInstalled
+        engineUpdateAvailable = EngineInstaller(paths: paths).updateAvailable()
         if selected == nil { selection = bottles.first?.name }
         refreshRunning()
         for bottle in bottles { rescan(bottle) }
@@ -138,30 +146,67 @@ final class AppModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { self.launching.remove(key) }
     }
 
-    /// Downloads Valve's Steam installer and starts it in the bottle.
-    func installSteam(in bottle: Bottle) {
+    /// Downloads a game store's installer from the store's own server and starts it in the bottle.
+    func install(_ store: GameStore, in bottle: Bottle) {
         let name = bottle.name
-        let folder = bottle.directory.appendingPathComponent("downloads", isDirectory: true)
-        let file = folder.appendingPathComponent("SteamSetup.exe")
-        activity[name] = "Downloading Steam…"
-        let url = URL(string: "https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe")!
-        URLSession.shared.downloadTask(with: url) { temp, response, error in
+        activity[name] = "Downloading \(store.name)…"
+        work.async {
             var failure: String?
-            if let temp, (response as? HTTPURLResponse)?.statusCode == 200 {
-                do {
-                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                    try? FileManager.default.removeItem(at: file)
-                    try FileManager.default.moveItem(at: temp, to: file)
-                } catch { failure = error.localizedDescription }
-            } else {
-                failure = "Steam could not be downloaded. Check your internet connection and try again."
-            }
+            var file: URL?
+            do {
+                file = try store.download(into: bottle) { fraction in
+                    DispatchQueue.main.async {
+                        if self.activity[name] != nil { self.activity[name] = "Downloading \(store.name)… \(Int(fraction * 100))%" }
+                    }
+                }
+            } catch let e as SetupError { failure = e.description } catch { failure = error.localizedDescription }
             DispatchQueue.main.async {
                 self.activity[name] = nil
                 if let failure { self.errorMessage = failure; return }
-                self.run(bottle, program: file.path)
+                if let file { self.run(bottle, program: file.path) }
             }
-        }.resume()
+        }
+    }
+
+    // MARK: updates
+
+    var checksForUpdates: Bool {
+        get { UserDefaults.standard.object(forKey: "checkForUpdates") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "checkForUpdates"); objectWillChange.send() }
+    }
+
+    /// Looks for a newer -196. A check the user asked for always reports back.
+    func checkForUpdates(manual: Bool) {
+        guard manual || checksForUpdates else { return }
+        UpdateChecker().check { found in
+            DispatchQueue.main.async {
+                self.update = found
+                if manual, found == nil { self.notice = "You have the newest version of -196 (\(AppInfo.version)), or the check could not reach GitHub." }
+            }
+        }
+    }
+
+    // MARK: problem report
+
+    /// Saves a report about the selected bottle to the Desktop and offers the next steps.
+    func saveProblemReport() {
+        let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+        do {
+            let file = try ProblemReport(paths: paths).save(bottleName: selection, to: desktop)
+            let alert = NSAlert()
+            alert.messageText = "The report is on your Desktop"
+            alert.informativeText = "It is called “\(file.lastPathComponent)”. It lists your Mac model, your -196 settings and the notes from the last apps you started. Your account name is removed, but have a look before sharing it. To ask for help, describe what went wrong on the problem page and attach the file."
+            alert.addButton(withTitle: "Open Problem Page")
+            alert.addButton(withTitle: "Show in Finder")
+            alert.addButton(withTitle: "Done")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                NSWorkspace.shared.activateFileViewerSelecting([file])
+                NSWorkspace.shared.open(AppInfo.newIssuePage)
+            case .alertSecondButtonReturn: NSWorkspace.shared.activateFileViewerSelecting([file])
+            default: break
+            }
+        } catch { errorMessage = "The report could not be saved to your Desktop." }
     }
 
     func stop(_ bottle: Bottle) {

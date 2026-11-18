@@ -7,6 +7,8 @@ minus196 — Wine bottle wrapper
   minus196 doctor
   minus196 setup [--archive FILE]              downloads and installs the engine (or uses a local archive)
   minus196 graphics add <toolkit.dmg>          installs Apple's D3DMetal from your Game Porting Toolkit download
+  minus196 report [bottle]                     prints a problem report (account name removed)
+  minus196 update                              says whether a newer -196 has been released
   minus196 engine list
   minus196 engine add <path> [--name NAME]
   minus196 engine default <name>
@@ -86,6 +88,24 @@ do {
         guard argv.first == "add", argv.count == 2 else { fail("graphics add <Game Porting Toolkit .dmg>") }
         let image = URL(fileURLWithPath: (argv[1] as NSString).expandingTildeInPath)
         print("installed: \(try AppleGraphicsInstaller(paths: paths).install(from: image))")
+
+    case "report":
+        print(ProblemReport(paths: paths).text(bottleName: argv.first), terminator: "")
+
+    case "update":
+        let done = DispatchSemaphore(value: 0)
+        UpdateChecker().check { found in
+            if let found { print("version \(found.version) is available: \(found.download.absoluteString)") }
+            else { print("nothing newer than \(AppInfo.version) was found") }
+            done.signal()
+        }
+        done.wait()
+
+    case "icon":                                        // for testing: writes a program's or shortcut's icon as .ico
+        guard argv.count == 2 else { fail("icon <program.exe> <out.ico>") }
+        guard let ico = WindowsIcon.icon(inProgramAt: argv[0]) else { fail("no icon found in \(argv[0])") }
+        try ico.write(to: URL(fileURLWithPath: argv[1]))
+        print("wrote \(ico.count) bytes")
 
     case "engine":
         guard let sub = argv.first else { fail("engine: list | add | default") }

@@ -13,10 +13,10 @@ public struct EngineRelease: Equatable {
     public var engineName: String { "minus196-\(version)" }
 
     public static let current = EngineRelease(
-        version: "26.3-1",
-        url: URL(string: "https://github.com/primeyeat/minus196/releases/download/engine-26.3-1/minus196-engine-26.3-1.tar.xz")!,
-        sha256: "d36ff618171d0a4a512093d6b12c8a68b96d7f21f21f77923fff7904179e27bf",
-        bytes: 190_562_276)
+        version: "26.3-2",
+        url: URL(string: "https://github.com/primeyeat/minus196/releases/download/engine-26.3-2/minus196-engine-26.3-2.tar.xz")!,
+        sha256: "df0ded9226fe0887596e9822b947f525620d9206114a30913c52316a8adf9bba",
+        bytes: 290531388)
 }
 
 public enum SetupStep: Equatable {
@@ -99,9 +99,33 @@ public struct EngineInstaller {
         if fm.fileExists(atPath: licences.path) {
             try? fm.copyItem(at: licences, to: destination.appendingPathComponent("LICENSES", isDirectory: true))
         }
+        // Becomes the default unless the user chose an engine of their own making.
         let store = EngineStore(paths: paths)
-        if store.loadSettings().defaultEngine.flatMap({ try? store.find($0) }) == nil {
-            try store.setDefault(release.engineName)
+        let current = store.loadSettings().defaultEngine.flatMap { try? store.find($0) }
+        if current == nil || current!.name.hasPrefix(Self.namePrefix) { try store.setDefault(release.engineName) }
+        removeOlderEngines(keeping: release.engineName)
+    }
+
+    static let namePrefix = "minus196-"
+
+    /// True when the default engine is an older download of ours.
+    public func updateAvailable(_ release: EngineRelease = .current) -> Bool {
+        let store = EngineStore(paths: paths)
+        guard let name = store.loadSettings().defaultEngine, (try? store.find(name)) != nil else { return false }
+        return name.hasPrefix(Self.namePrefix) && name != release.engineName
+    }
+
+    /// Deletes earlier downloaded engines, unless a bottle asks for one by name or is running.
+    func removeOlderEngines(keeping name: String) {
+        let bottles = (try? BottleStore(paths: paths).list()) ?? []
+        guard !bottles.contains(where: \.isRunning) else { return }
+        let named = Set(bottles.compactMap(\.config.engine))
+        for entry in (try? fm.contentsOfDirectory(atPath: paths.engines.path)) ?? []
+        where entry.hasPrefix(Self.namePrefix) && entry != name && !named.contains(entry) {
+            let url = paths.engines.appendingPathComponent(entry)
+            // Only real folders we unpacked; never a link to someone's own build.
+            guard (try? fm.attributesOfItem(atPath: url.path))?[.type] as? FileAttributeType == .typeDirectory else { continue }
+            try? fm.removeItem(at: url)
         }
     }
 

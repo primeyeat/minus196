@@ -30,6 +30,15 @@ struct Minus196App: App {
             CommandGroup(after: .toolbar) {
                 Button("Refresh") { model.reload() }.keyboardShortcut("r")
             }
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { model.checkForUpdates(manual: true) }
+                Toggle("Check for Updates Automatically", isOn: Binding(get: { model.checksForUpdates },
+                                                                        set: { model.checksForUpdates = $0 }))
+            }
+            CommandGroup(replacing: .help) {
+                Button("Report a Problem…") { model.saveProblemReport() }
+                Button("-196 on GitHub") { NSWorkspace.shared.open(AppInfo.releasesPage) }
+            }
         }
     }
 }
@@ -71,22 +80,7 @@ struct ContentView: View {
                 .help("A bottle is a separate little Windows for your apps")
             }
         } detail: {
-            if !model.hasEngine {
-                SetupView()
-            } else if let bottle = model.selected {
-                BottleDetail(bottle: bottle).id(bottle.name)
-            } else if let name = pendingNames.first {
-                VStack(spacing: 14) {
-                    ProgressView()
-                    Text("Setting up “\(name)”…").font(.title3.weight(.semibold))
-                    Text("This takes about a minute.").foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                Message(symbol: "wineglass", title: "Run Windows apps on your Mac",
-                        text: "Start by creating a bottle: a separate little Windows that your apps and games get installed into.",
-                        action: ("Create a Bottle", { showingNewBottle = true }))
-            }
+            detail.safeAreaInset(edge: .top, spacing: 0) { UpdateBanner() }
         }
         .sheet(isPresented: $showingNewBottle) { NewBottleSheet() }
         .sheet(isPresented: $showingAppleGraphics) { AppleGraphicsSheet() }
@@ -96,6 +90,68 @@ struct ContentView: View {
                                                         set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(model.errorMessage ?? "") }
+        .alert("-196", isPresented: Binding(get: { model.notice != nil }, set: { if !$0 { model.notice = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(model.notice ?? "") }
+    }
+
+    @ViewBuilder private var detail: some View {
+        if !model.hasEngine {
+            SetupView()
+        } else if let bottle = model.selected {
+            BottleDetail(bottle: bottle).id(bottle.name)
+        } else if let name = pendingNames.first {
+            VStack(spacing: 14) {
+                ProgressView()
+                Text("Setting up “\(name)”…").font(.title3.weight(.semibold))
+                Text("This takes about a minute.").foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            Message(symbol: "wineglass", title: "Run Windows apps on your Mac",
+                    text: "Start by creating a bottle: a separate little Windows that your apps and games get installed into.",
+                    action: ("Create a Bottle", { showingNewBottle = true }))
+        }
+    }
+}
+
+/// A thin bar above the content when there is something newer to get.
+struct UpdateBanner: View {
+    @EnvironmentObject var model: AppModel
+    @State private var hiddenVersion: String?
+
+    var body: some View {
+        if let update = model.update, hiddenVersion != update.version {
+            bar("Version \(update.version) of -196 is available.") {
+                Button("Download") { NSWorkspace.shared.open(update.download) }
+                Button("Later") { hiddenVersion = update.version }
+            }
+        } else if model.hasEngine, model.engineUpdateAvailable {
+            if let step = model.setupStep {
+                bar(step == .unpacking ? "Unpacking the update…" : step == .checking ? "Checking the download…" : "Downloading the update…") {
+                    if case .downloading(let fraction) = step { ProgressView(value: fraction).frame(width: 140) }
+                    else { ProgressView().controlSize(.small) }
+                }
+            } else {
+                bar(model.setupProblem ?? "An improved version of the part that runs Windows apps is ready (\(Int(EngineRelease.current.bytes / 1_000_000)) MB).") {
+                    Button(model.setupProblem == nil ? "Update" : "Try Again") { model.setUp() }
+                        .disabled(!model.running.isEmpty)
+                        .help(model.running.isEmpty ? "Downloads and installs it" : "Quit your Windows apps first")
+                }
+            }
+        }
+    }
+
+    private func bar<Buttons: View>(_ text: String, @ViewBuilder buttons: () -> Buttons) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.circle.fill").foregroundStyle(.tint)
+            Text(text).font(.callout).lineLimit(2)
+            Spacer()
+            buttons()
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
     }
 }
 
@@ -144,7 +200,7 @@ struct SetupView: View {
                 }
                 Button(model.setupProblem == nil ? "Download and Set Up" : "Try Again") { model.setUp() }
                     .buttonStyle(.borderedProminent).controlSize(.large).padding(.top, 6)
-                Text("Downloaded from the -196 page on GitHub. It is the free Wine software, plus graphics add-ons (DXMT, DXVK), and takes about 1 GB on your disk.")
+                Text("Downloaded from the -196 page on GitHub. It is the free Wine software, plus graphics add-ons (DXMT, DXVK), and takes about 1.4 GB on your disk.")
                     .font(.caption).foregroundStyle(.tertiary).multilineTextAlignment(.center).frame(maxWidth: 400).padding(.top, 4)
             }
         }
