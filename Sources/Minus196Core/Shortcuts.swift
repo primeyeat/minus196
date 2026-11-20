@@ -105,11 +105,18 @@ public struct ShortcutScanner {
 extension Bottle {
     /// True while the bottle's wineserver is up. Wine keeps its socket in
     /// /tmp/.wine-<uid>/server-<device>-<inode>/ (hex, taken from the prefix folder) and removes
-    /// it on a clean exit; after a crash this can report a bottle as running until the next start.
+    /// it on a clean exit. After a crash the socket stays behind, so the lock the server holds
+    /// on the "lock" file next to it is checked too: nobody holding it means the server is gone.
     public var isRunning: Bool {
         var info = stat()
         guard stat(prefix.path, &info) == 0 else { return false }
         let dir = "/tmp/.wine-\(getuid())/server-\(String(UInt64(bitPattern: Int64(info.st_dev)), radix: 16))-\(String(info.st_ino, radix: 16))"
-        return FileManager.default.fileExists(atPath: dir + "/socket")
+        guard FileManager.default.fileExists(atPath: dir + "/socket") else { return false }
+        let fd = open(dir + "/lock", O_RDONLY)
+        guard fd >= 0 else { return true }
+        defer { close(fd) }
+        var lock = flock(l_start: 0, l_len: 0, l_pid: 0, l_type: Int16(F_WRLCK), l_whence: Int16(SEEK_SET))
+        guard fcntl(fd, F_GETLK, &lock) == 0 else { return true }
+        return lock.l_type != Int16(F_UNLCK)
     }
 }

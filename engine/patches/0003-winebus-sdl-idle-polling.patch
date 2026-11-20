@@ -1,0 +1,29 @@
+--- a/dlls/winebus.sys/bus_sdl.c
++++ b/dlls/winebus.sys/bus_sdl.c
+@@ -1206,9 +1206,24 @@
+ 
+     do
+     {
++        BOOL idle;
++
+         if (bus_event_queue_pop(&event_queue, result)) return STATUS_PENDING;
+-        if (pSDL_WaitEventTimeout(&event, 10) != 0) process_device_event(&event);
+-        else check_all_devices_effects_state();
++
++        /* -196: without a window SDL waits by polling every millisecond, which keeps the
++         * processor awake for as long as the bottle runs. While no controller is connected
++         * only plugging one in can happen, so look four times a second instead. */
++        pthread_mutex_lock(&sdl_cs);
++        idle = list_empty(&device_list);
++        pthread_mutex_unlock(&sdl_cs);
++
++        event.type = 0;
++        if (pSDL_WaitEventTimeout(&event, idle ? 0 : 10) != 0) process_device_event(&event);
++        else
++        {
++            check_all_devices_effects_state();
++            if (idle) usleep(250000);
++        }
+     } while (event.type != quit_event);
+ 
+     TRACE("SDL main loop exiting\n");

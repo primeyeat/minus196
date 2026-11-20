@@ -44,6 +44,24 @@ final class AppModel: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshRunning() }
         }
+        timer?.tolerance = 1          // lets macOS group this with other wake-ups
+        endLeftovers()
+    }
+
+    /// Ends Windows programs left behind by a bottle that is no longer running.
+    private func endLeftovers() {
+        let paths = self.paths, idle = bottles.filter { !$0.isRunning }
+        work.async { idle.forEach { Launcher(paths: paths).endLeftovers(of: $0) } }
+    }
+
+    /// Stops every running bottle, then calls back on the main thread.
+    func stopAll(then: @escaping () -> Void) {
+        let paths = self.paths, names = bottles.filter(\.isRunning).map(\.name)
+        for name in names { activity[name] = "Stopping…" }
+        work.async {
+            for name in names { try? Launcher(paths: paths).stop(bottleName: name) }
+            DispatchQueue.main.async { then() }
+        }
     }
 
     func reload() {

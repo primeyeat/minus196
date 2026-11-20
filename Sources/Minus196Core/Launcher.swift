@@ -165,5 +165,39 @@ public struct Launcher {
         let engine = try engines.resolve(for: bottle.config)
         if !force { try? tool(bottle, engine: engine, ["wineboot", "--end-session", "--shutdown"], label: "wineboot-shutdown") }
         try? tool(bottle, engine: engine, ["-k"], label: "wineserver-kill", executable: engine.wineserver)
+        endLeftovers(of: bottle)
+    }
+
+    /// Process ids of Windows programs that belong to this bottle, found by the WINEPREFIX each
+    /// was started with. Wine rewrites a process's name, which hides its environment from `ps`,
+    /// so the startup data the system keeps for each process is searched directly.
+    public func processes(of bottle: Bottle) -> [pid_t] {
+        let needle = Data("\0WINEPREFIX=\(bottle.prefix.path)\0".utf8)
+        var pids = [pid_t](repeating: 0, count: 8192)
+        let bytes = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size))
+        guard bytes > 0 else { return [] }
+        var found: [pid_t] = []
+        for pid in pids.prefix(Int(bytes)) where pid > 1 && pid != getpid() {
+            var mib = [CTL_KERN, KERN_PROCARGS2, pid]
+            var size = 0
+            guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 0, size <= 4_000_000 else { continue }
+            var buffer = [UInt8](repeating: 0, count: size)
+            guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { continue }   // other users' processes fail here
+            if Data(buffer.prefix(size)).range(of: needle) != nil { found.append(pid) }
+        }
+        return found
+    }
+
+    /// Ends programs that outlived the bottle's wineserver (after it crashed, say). Without the
+    /// server they can do nothing useful, but some keep using the processor. Does nothing while
+    /// the bottle is running.
+    public func endLeftovers(of bottle: Bottle) {
+        guard !bottle.isRunning else { return }
+        let first = processes(of: bottle)
+        guard !first.isEmpty else { return }
+        first.forEach { kill($0, SIGTERM) }
+        Thread.sleep(forTimeInterval: 1)
+        guard !bottle.isRunning else { return }
+        processes(of: bottle).filter(first.contains).forEach { kill($0, SIGKILL) }
     }
 }

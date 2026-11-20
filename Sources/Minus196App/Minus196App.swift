@@ -2,8 +2,36 @@ import AppKit
 import Minus196Core
 import SwiftUI
 
+/// Asks before quitting while Windows programs are still running: left alone they keep using
+/// power in the background, and macOS counts all of it as -196.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    var model: AppModel?
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model else { return .terminateNow }
+        model.refreshRunning()
+        let names = model.running.sorted()
+        guard !names.isEmpty else { return .terminateNow }
+        let alert = NSAlert()
+        alert.messageText = "Windows programs are still running"
+        alert.informativeText = "Still running: \(names.joined(separator: ", ")). "
+            + "Programs like Steam keep working in the background and use battery until they are stopped."
+        alert.addButton(withTitle: "Stop Them and Quit")
+        alert.addButton(withTitle: "Leave Them Running")
+        alert.addButton(withTitle: "Cancel")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            model.stopAll { sender.reply(toApplicationShouldTerminate: true) }
+            return .terminateLater
+        case .alertSecondButtonReturn: return .terminateNow
+        default: return .terminateCancel
+        }
+    }
+}
+
 @main
 struct Minus196App: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = AppModel()
 
     init() {
@@ -17,6 +45,7 @@ struct Minus196App: App {
                 .environmentObject(model)
                 .frame(minWidth: 780, minHeight: 500)
                 .onAppear {
+                    delegate.model = model
                     model.start()
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
