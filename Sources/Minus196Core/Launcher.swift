@@ -61,27 +61,53 @@ public struct Launcher {
 
     /// Creates the bottle on disk and initialises its Wine prefix.
     @discardableResult
-    public func createBottle(_ config: BottleConfig) throws -> Bottle {
+    public func createBottle(_ config: BottleConfig, progress: ((Double) -> Void)? = nil) throws -> Bottle {
         let engine = try engines.resolve(for: config)
         try engine.validate()
         let bottle = try store.create(config)
         do {
+            progress?(0.02)
+            // Most of the time goes into Windows' system files being put in place, so the share
+            // of them that has arrived is the progress. A bottle gets about three quarters of
+            // the files the engine has.
+            let watcher = progress.map { report in
+                SystemFilesWatcher(prefix: bottle.prefix, expected: max(1, engine.windowsFileCount * 3 / 4)) { report(0.05 + 0.8 * $0) }
+            }
+            defer { watcher?.stop() }
             // See Engine.setupOverrides: keeps Wine's "install Mono / Gecko?" dialogs from blocking.
             try tool(bottle, engine: engine, ["wineboot", "--init"], label: "wineboot-init",
                      extraEnv: engine.setupOverrides.map { ["WINEDLLOVERRIDES": $0] } ?? [:])
+            watcher?.stop()
+            progress?(0.88)
             try tool(bottle, engine: engine, ["winecfg", "/v", config.windowsVersion], label: "winecfg-version")
+            progress?(0.95)
             let home = fm.homeDirectoryForCurrentUser
             let y = bottle.prefix.appendingPathComponent("dosdevices/y:")
             if (try? fm.attributesOfItem(atPath: y.path)) == nil {
                 try? fm.createSymbolicLink(at: y, withDestinationURL: home)
             }
-            try tool(bottle, engine: engine, ["-w"], label: "wineserver-wait", executable: engine.wineserver)
+            // Everything is set up once the two tools above return. Left alone, Windows' idle
+            // background helpers take another 40 seconds or so to exit; stopping the bottle ends
+            // them now, and the server writes the registry to disk on its way out.
+            try? tool(bottle, engine: engine, ["-k"], label: "wineserver-kill", executable: engine.wineserver)
+            try waitUntilStopped(bottle, engine: engine)
         } catch {
             // Leave nothing half-made behind.
             try? fm.removeItem(at: bottle.directory)
             throw error
         }
         return bottle
+    }
+
+    /// Waits for the bottle's server to be gone and its registry to be on disk.
+    func waitUntilStopped(_ bottle: Bottle, engine: Engine) throws {
+        let registry = bottle.prefix.appendingPathComponent("system.reg").path
+        for _ in 0..<100 {
+            if !bottle.isRunning && fm.fileExists(atPath: registry) { return }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        // Not stopped after ten seconds: fall back to waiting for it to finish by itself.
+        try tool(bottle, engine: engine, ["-w"], label: "wineserver-wait", executable: engine.wineserver)
     }
 
     @discardableResult
@@ -199,5 +225,28 @@ public struct Launcher {
         Thread.sleep(forTimeInterval: 1)
         guard !bottle.isRunning else { return }
         processes(of: bottle).filter(first.contains).forEach { kill($0, SIGKILL) }
+    }
+}
+
+/// Reports, a few times a second, how many of the expected Windows system files a new bottle has.
+final class SystemFilesWatcher {
+    private let timer: DispatchSourceTimer
+    private var stopped = false
+    private let lock = NSLock()
+
+    init(prefix: URL, expected: Int, report: @escaping (Double) -> Void) {
+        let folders = ["system32", "syswow64"].map { prefix.appendingPathComponent("drive_c/windows/\($0)").path }
+        timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        timer.schedule(deadline: .now() + 0.3, repeating: 0.3, leeway: .milliseconds(100))
+        timer.setEventHandler {
+            let count = folders.reduce(0) { $0 + ((try? FileManager.default.contentsOfDirectory(atPath: $1).count) ?? 0) }
+            report(min(1, Double(count) / Double(expected)))
+        }
+        timer.resume()
+    }
+
+    func stop() {
+        lock.lock(); defer { lock.unlock() }
+        if !stopped { stopped = true; timer.cancel() }
     }
 }

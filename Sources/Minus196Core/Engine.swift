@@ -7,6 +7,12 @@ public struct Engine: Equatable {
 
     public var wine: URL { root.appendingPathComponent("bin/wine") }
     public var wineserver: URL { root.appendingPathComponent("bin/wineserver") }
+    /// How many Windows-side files (DLLs and programs) the engine has, both 64-bit and 32-bit.
+    public var windowsFileCount: Int {
+        ["x86_64-windows", "i386-windows"].reduce(0) {
+            $0 + ((try? FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("lib/wine/\($1)").path).count) ?? 0)
+        }
+    }
     public var libWine: URL { root.appendingPathComponent("lib/wine", isDirectory: true) }
 
     /// Returns the first required file that is missing, or nil if the tree looks usable.

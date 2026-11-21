@@ -141,7 +141,11 @@ do {
             let config = BottleConfig(name: name, engine: a.options["--engine"], arch: arch,
                                       windowsVersion: a.options["--winver"] ?? "win10", backend: backend,
                                       msync: !a.flags.contains("--no-msync"))
-            let bottle = try Launcher(paths: paths).createBottle(config)
+            var shown = -1
+            let bottle = try Launcher(paths: paths).createBottle(config) { fraction in
+                let percent = Int(fraction * 100)
+                if percent > shown { shown = percent; FileHandle.standardError.write(Data("\(percent)%\n".utf8)) }
+            }
             print("created bottle '\(bottle.name)' at \(bottle.directory.path)")
         case "info":
             guard let name = a.positional.first else { fail("bottle info <name>") }

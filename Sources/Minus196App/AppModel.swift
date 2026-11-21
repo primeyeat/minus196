@@ -16,6 +16,8 @@ final class AppModel: ObservableObject {
     @Published var shortcuts: [String: [Shortcut]] = [:]
     /// Bottle name -> what is being done to it right now ("Creating…").
     @Published var activity: [String: String] = [:]
+    /// How far along each bottle being created is, 0...1.
+    @Published var creationProgress: [String: Double] = [:]
     @Published var errorMessage: String?
     @Published var hasEngine = true
     /// First-time setup (downloading the engine): nil when idle.
@@ -236,7 +238,15 @@ final class AppModel: ObservableObject {
         let name = config.name
         selection = nil
         activity[name] = "Creating…"
-        perform("Creating…", on: name, then: { self.selection = name }) { _ = try $0.createBottle(config) }
+        creationProgress[name] = 0
+        perform("Creating…", on: name, then: { self.selection = name; self.creationProgress[name] = nil }) { launcher in
+            _ = try launcher.createBottle(config) { fraction in
+                DispatchQueue.main.async {
+                    // Only ever forwards, and only while this bottle is still being made.
+                    if let now = self.creationProgress[name], fraction > now { self.creationProgress[name] = fraction }
+                }
+            }
+        }
     }
 
     func duplicate(_ bottle: Bottle, as newName: String) {

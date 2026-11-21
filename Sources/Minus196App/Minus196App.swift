@@ -130,17 +130,40 @@ struct ContentView: View {
         } else if let bottle = model.selected {
             BottleDetail(bottle: bottle).id(bottle.name)
         } else if let name = pendingNames.first {
-            VStack(spacing: 14) {
-                ProgressView()
-                Text("Setting up “\(name)”…").font(.title3.weight(.semibold))
-                Text("This takes about a minute.").foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            CreatingView(name: name)
         } else {
             Message(symbol: "wineglass", title: "Run Windows apps on your Mac",
                     text: "Start by creating a bottle: a separate little Windows that your apps and games get installed into.",
                     action: ("Create a Bottle", { showingNewBottle = true }))
         }
+    }
+}
+
+/// Shown while a new bottle is being made: what is happening, how far it is, how long it takes.
+struct CreatingView: View {
+    @EnvironmentObject var model: AppModel
+    let name: String
+
+    private var fraction: Double { model.creationProgress[name] ?? 0 }
+    private var step: String {
+        switch fraction {
+        case ..<0.05: return "Starting…"
+        case ..<0.86: return "Putting Windows in place…"
+        case ..<0.95: return "Setting the Windows version…"
+        default: return "Finishing…"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "wineglass").font(.system(size: 40)).foregroundStyle(.secondary)
+            Text("Getting “\(name)” ready").font(.title3.weight(.semibold))
+            ProgressView(value: fraction).frame(width: 280).animation(.easeOut(duration: 0.3), value: fraction)
+            Text(step).foregroundStyle(.secondary)
+            Text("This usually takes 10 to 20 seconds. The very first bottle takes longer, up to a minute.")
+                .font(.footnote).foregroundStyle(.tertiary).multilineTextAlignment(.center).frame(maxWidth: 320)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -356,7 +379,7 @@ struct NewBottleSheet: View {
                 .padding(.top, 6)
             }
             HStack {
-                Text("Takes about a minute.").font(.callout).foregroundStyle(.secondary)
+                Text("Takes about 15 seconds.").font(.callout).foregroundStyle(.secondary)
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Create") {
