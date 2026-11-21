@@ -196,6 +196,15 @@ do {
         try Launcher(paths: paths).stop(bottleName: name, force: a.flags.contains("--force"))
         print("stopped '\(name)'")
 
+    case "leftovers":
+        // Lists a bottle's processes and says which are helpers left behind by a closed launcher.
+        guard let name = argv.first else { fail("leftovers <bottle> [--end]") }
+        let launcher = Launcher(paths: paths), bottle = try store.load(name)
+        for p in launcher.processList(of: bottle) { print("\(p.pid)\t\(p.title.prefix(100))") }
+        let orphans = launcher.orphanedHelpers(of: bottle)
+        print(orphans.isEmpty ? "no leftover helpers" : "leftover helpers: \(orphans.map(String.init).joined(separator: " "))")
+        if argv.contains("--end") { orphans.forEach { kill($0, SIGKILL) } }
+
     case "env":
         guard let name = argv.first else { fail("env <bottle>") }
         let bottle = try store.load(name)

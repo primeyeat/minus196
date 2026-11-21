@@ -321,4 +321,18 @@ final class Minus196CoreTests: XCTestCase {
         try EngineStore(paths: paths).setDefault(try fakeEngine("mine").name)
         XCTAssertFalse(installer.updateAvailable(two))
     }
+
+    func testOrphanedHelpers() {
+        let system: [(pid: pid_t, title: String)] = [(10, #"C:\windows\system32\services.exe "#), (11, #"C:\windows\system32\explorer.exe /desktop "#)]
+        let helper: (pid: pid_t, title: String) = (20, #"C:\Program Files (x86)\Steam\bin\cef\cef.win64\steamwebhelper.exe --type=renderer --lang=de"#)
+        // Only Windows itself and a helper left: the helper is a leftover.
+        XCTAssertEqual(Launcher.orphanedHelpers(in: system + [helper]), [20])
+        // The launcher is still running: nothing is a leftover.
+        XCTAssertEqual(Launcher.orphanedHelpers(in: system + [helper, (21, #"C:\Program Files (x86)\Steam\steam.exe -silent"#)]), [])
+        // The browser's main process has no --type and counts as a real program.
+        XCTAssertEqual(Launcher.orphanedHelpers(in: system + [helper, (22, #"C:\Program Files (x86)\Steam\bin\cef\cef.win64\steamwebhelper.exe -nocrashdialog"#)]), [])
+        XCTAssertEqual(Launcher.orphanedHelpers(in: system), [])
+        // Something that cannot be read: leave everything alone.
+        XCTAssertEqual(Launcher.orphanedHelpers(in: system + [helper, (23, "???")]), [])
+    }
 }

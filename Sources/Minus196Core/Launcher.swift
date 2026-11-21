@@ -194,37 +194,87 @@ public struct Launcher {
         endLeftovers(of: bottle)
     }
 
-    /// Process ids of Windows programs that belong to this bottle, found by the WINEPREFIX each
-    /// was started with. Wine rewrites a process's name, which hides its environment from `ps`,
-    /// so the startup data the system keeps for each process is searched directly.
-    public func processes(of bottle: Bottle) -> [pid_t] {
+    /// The Windows programs that belong to this bottle, found by the WINEPREFIX each was
+    /// started with. Wine rewrites a process's name, which hides its environment from `ps`,
+    /// so the startup data the system keeps for each process is searched directly. `title` is
+    /// the Windows command line Wine shows as the process name.
+    public func processList(of bottle: Bottle) -> [(pid: pid_t, title: String)] {
         let needle = Data("\0WINEPREFIX=\(bottle.prefix.path)\0".utf8)
         var pids = [pid_t](repeating: 0, count: 8192)
-        let bytes = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size))
-        guard bytes > 0 else { return [] }
-        var found: [pid_t] = []
-        for pid in pids.prefix(Int(bytes)) where pid > 1 && pid != getpid() {
+        let count = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size))
+        guard count > 0 else { return [] }
+        var found: [(pid_t, String)] = []
+        for pid in pids.prefix(Int(count)) where pid > 1 && pid != getpid() {
             var mib = [CTL_KERN, KERN_PROCARGS2, pid]
             var size = 0
             guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 0, size <= 4_000_000 else { continue }
             var buffer = [UInt8](repeating: 0, count: size)
             guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { continue }   // other users' processes fail here
-            if Data(buffer.prefix(size)).range(of: needle) != nil { found.append(pid) }
+            let data = Data(buffer.prefix(size))
+            guard data.range(of: needle) != nil else { continue }
+            // Layout: argument count (4 bytes), the program's path, zero padding, then the name.
+            // Layout: argument count (4 bytes), the program's path, zero padding, the arguments.
+            let argc = Int(data[0]) | Int(data[1]) << 8 | Int(data[2]) << 16 | Int(data[3]) << 24
+            var at = 4
+            while at < data.count, data[at] != 0 { at += 1 }
+            if String(decoding: data[4..<at], as: UTF8.self).hasSuffix("/wineserver") { continue }   // the server itself
+            while at < data.count, data[at] == 0 { at += 1 }
+            var parts: [String] = []
+            while parts.count < max(1, min(argc, 64)), at < data.count {
+                var end = at
+                while end < data.count, data[end] != 0 { end += 1 }
+                parts.append(String(decoding: data[at..<end], as: UTF8.self))
+                at = end + 1
+            }
+            found.append((pid, parts.joined(separator: " ")))
         }
         return found
     }
 
+    public func processes(of bottle: Bottle) -> [pid_t] { processList(of: bottle).map(\.pid) }
+
+    /// Parts of Windows itself that run in every bottle.
+    static let systemPrograms: Set<String> = ["services.exe", "winedevice.exe", "plugplay.exe", "svchost.exe", "rpcss.exe",
+                                              "explorer.exe", "conhost.exe", "start.exe", "wineboot.exe", "winemenubuilder.exe"]
+
+    /// Launchers such as Steam are built on a web browser engine that runs helper processes
+    /// (their command line carries "--type=renderer" and the like). When the launcher exits,
+    /// a helper sometimes fails to notice and spins at full speed for hours. Given a bottle's
+    /// processes, returns those helpers when nothing but them and Windows itself is left.
+    static func orphanedHelpers(in list: [(pid: pid_t, title: String)]) -> [pid_t] {
+        var helpers: [pid_t] = []
+        for (pid, title) in list {
+            let lower = title.lowercased()
+            guard let exe = lower.range(of: ".exe") else { return [] }             // unknown: leave everything alone
+            let name = lower[..<exe.upperBound].split(separator: "\\").last.map(String.init) ?? ""
+            if lower[exe.upperBound...].contains(" --type=") { helpers.append(pid) }
+            else if !systemPrograms.contains(name) { return [] }                   // a real program is still running
+        }
+        return helpers
+    }
+
+    public func orphanedHelpers(of bottle: Bottle) -> [pid_t] { Self.orphanedHelpers(in: processList(of: bottle)) }
+
     /// Ends programs that outlived the bottle's wineserver (after it crashed, say). Without the
     /// server they can do nothing useful, but some keep using the processor. Does nothing while
     /// the bottle is running.
-    public func endLeftovers(of bottle: Bottle) {
+    public func endLeftovers(of bottle: Bottle, olderThan seconds: TimeInterval = 0) {
         guard !bottle.isRunning else { return }
-        let first = processes(of: bottle)
+        let first = processes(of: bottle).filter { Self.age(of: $0) >= seconds }
         guard !first.isEmpty else { return }
         first.forEach { kill($0, SIGTERM) }
         Thread.sleep(forTimeInterval: 1)
         guard !bottle.isRunning else { return }
         processes(of: bottle).filter(first.contains).forEach { kill($0, SIGKILL) }
+    }
+
+    /// Seconds since a process started; 0 when that cannot be read. A program that is just
+    /// starting has no server yet either, and must not be taken for a leftover.
+    static func age(of pid: pid_t) -> TimeInterval {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return 0 }
+        return Date().timeIntervalSince1970 - TimeInterval(info.pbi_start_tvsec)
     }
 }
 

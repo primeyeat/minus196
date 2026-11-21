@@ -44,16 +44,45 @@ final class AppModel: ObservableObject {
         reload()
         checkForUpdates(manual: false)
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshRunning() }
+            Task { @MainActor in self?.tick() }
         }
         timer?.tolerance = 1          // lets macOS group this with other wake-ups
         endLeftovers()
     }
 
+    private var ticks = 0
+    /// Helpers seen left over at the last check, per bottle. They are only ended when the next
+    /// check, half a minute later, finds exactly the same ones still there.
+    private var suspects: [String: Set<pid_t>] = [:]
+
+    private func tick() {
+        refreshRunning()
+        ticks += 1
+        if ticks % 15 == 0 { endOrphanedHelpers() }
+    }
+
+    /// A closed launcher (Steam and the like) sometimes leaves a helper process spinning at
+    /// full speed. Looks for those in running bottles and ends them; with nothing else left the
+    /// bottle then shuts down by itself.
+    private func endOrphanedHelpers() {
+        let paths = self.paths, bottles = self.bottles.filter { running.contains($0.name) }
+        if bottles.isEmpty { suspects = [:]; return }
+        let before = suspects
+        work.async {
+            var now: [String: Set<pid_t>] = [:]
+            for bottle in bottles {
+                let found = Set(Launcher(paths: paths).orphanedHelpers(of: bottle))
+                if found.isEmpty { continue }
+                if before[bottle.name] == found { found.forEach { kill($0, SIGKILL) } } else { now[bottle.name] = found }
+            }
+            DispatchQueue.main.async { self.suspects = now }
+        }
+    }
+
     /// Ends Windows programs left behind by a bottle that is no longer running.
     private func endLeftovers() {
         let paths = self.paths, idle = bottles.filter { !$0.isRunning }
-        work.async { idle.forEach { Launcher(paths: paths).endLeftovers(of: $0) } }
+        work.async { idle.forEach { Launcher(paths: paths).endLeftovers(of: $0, olderThan: 60) } }
     }
 
     /// Stops every running bottle, then calls back on the main thread.
