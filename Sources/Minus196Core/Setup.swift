@@ -13,10 +13,10 @@ public struct EngineRelease: Equatable {
     public var engineName: String { "minus196-\(version)" }
 
     public static let current = EngineRelease(
-        version: "26.3-2",
-        url: URL(string: "https://github.com/primeyeat/minus196/releases/download/engine-26.3-2/minus196-engine-26.3-2.tar.xz")!,
-        sha256: "df0ded9226fe0887596e9822b947f525620d9206114a30913c52316a8adf9bba",
-        bytes: 290531388)
+        version: "26.3-3",
+        url: URL(string: "https://github.com/primeyeat/minus196/releases/download/engine-26.3-3/minus196-engine-26.3-3.tar.xz")!,
+        sha256: "79133ff339769a1ade2b3d845a2f4a45a80c502b6ad67599070b37d40be26981",
+        bytes: 290512536)
 }
 
 public enum SetupStep: Equatable {

@@ -2,7 +2,7 @@ import Foundation
 
 public enum AppInfo {
     /// The app's version. make-app.sh reads this line for the bundle's version.
-    public static let version = "0.2"
+    public static let version = "0.2.1"
     public static let repository = "primeyeat/minus196"
     public static let releasesPage = URL(string: "https://github.com/\(repository)/releases")!
     public static let newIssuePage = URL(string: "https://github.com/\(repository)/issues/new")!

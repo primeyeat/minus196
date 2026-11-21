@@ -8,11 +8,11 @@
 #                  LICENSES/  licence texts, and SOURCE.txt saying where the source is
 # Never in it: Apple's D3DMetal (backends/gptk). That is under Apple's licence.
 #
-# Usage: engine/package-engine.sh [version]        e.g. engine/package-engine.sh 26.3-2
+# Usage: engine/package-engine.sh [version]        e.g. engine/package-engine.sh 26.3-3
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 source "$HERE/env.sh"
-VERSION="${1:-26.3-2}"
+VERSION="${1:-26.3-3}"
 HOME_DIR="${MINUS196_HOME:-$HOME/Library/Application Support/minus196}"
 OUT="$HERE/build-package"
 STAGE="$OUT/minus196-engine"
